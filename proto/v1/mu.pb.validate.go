@@ -293,6 +293,8 @@ func (m *UploadTrafficLogRequest) validate(all bool) error {
 
 	var errors []error
 
+	// no validation rules for NodeId
+
 	for idx, item := range m.GetLogs() {
 		_, _ = idx, item
 
