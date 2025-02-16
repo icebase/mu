@@ -3,7 +3,7 @@ package v1;
 
 // import "validate/validate.proto";
 
-option go_package = "github.com/icebase/proto/proto/v1";
+option go_package = "github.com/icebase/mu/proto/v1";
 
 service MUService {
     rpc GetUsers(GetUsersRequest) returns (GetUsersResponse) {}

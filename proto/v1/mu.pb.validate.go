@@ -57,6 +57,8 @@ func (m *GetUsersRequest) validate(all bool) error {
 
 	var errors []error
 
+	// no validation rules for NodeId
+
 	if len(errors) > 0 {
 		return GetUsersRequestMultiError(errors)
 	}

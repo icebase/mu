@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	pb "github.com/icebase/proto/proto/v1"
+	pb "github.com/icebase/mu/proto/v1"
 	"github.com/twitchtv/twirp"
 )
 
