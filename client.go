@@ -8,6 +8,10 @@ import (
 	"github.com/twitchtv/twirp"
 )
 
+const (
+	TokenHeader = "X-Mu-Token"
+)
+
 var (
 	_ pb.MUService = (*Client)(nil)
 )
@@ -24,7 +28,7 @@ func NewClient(addr string, token string) *Client {
 
 func (c *Client) newContext(ctx context.Context) context.Context {
 	header := make(http.Header)
-	header.Set("Token", c.token)
+	header.Set(TokenHeader, c.token)
 	ctx, err := twirp.WithHTTPRequestHeaders(ctx, header)
 	if err != nil {
 		panic(err)
