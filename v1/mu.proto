@@ -1,0 +1,50 @@
+syntax = "proto3";
+package v1;
+
+// import "validate/validate.proto";
+
+option go_package = "github.com/icebase/proto/v1";
+
+service MUService {
+    rpc GetUsers(GetUsersRequest) returns (GetUsersResponse) {}
+    rpc UploadTrafficLog(UploadTrafficLogRequest) returns (UploadTrafficLogResponse) {}
+}
+
+message GetUsersRequest {}
+
+message GetUsersResponse {
+    repeated User users = 1;
+}
+
+message UploadTrafficLogRequest {
+    repeated UserTrafficLog logs = 1;
+    int64 UploadAt = 2;
+}
+
+message UploadTrafficLogResponse {}
+
+message VUser {
+    string email = 1;
+    string uuid = 2;
+    uint32 alter_id = 3;
+    uint32 level = 4;
+}
+
+message User {
+    int64 id = 1;
+    int32 port = 2;
+    string passwd = 3;
+    string method = 4;
+    int32 enable = 5;
+    int64 transfer_enable = 6;
+    int64 u = 7;
+    int64 d = 8;
+    VUser v2ray_user = 9;
+}
+
+message UserTrafficLog {
+    int64 user_id = 1;
+    string uuid = 2;
+    int64 u = 3;
+    int64 d = 4;
+}
