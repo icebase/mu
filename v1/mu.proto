@@ -19,8 +19,9 @@ message GetUsersResponse {
 }
 
 message UploadTrafficLogRequest {
-    repeated UserTrafficLog logs = 1;
-    int64 upload_at = 2;
+    string node_id = 1;
+    repeated UserTrafficLog logs = 2;
+    int64 upload_at = 3;
 }
 
 message UploadTrafficLogResponse {}
