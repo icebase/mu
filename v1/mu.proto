@@ -10,7 +10,9 @@ service MUService {
     rpc UploadTrafficLog(UploadTrafficLogRequest) returns (UploadTrafficLogResponse) {}
 }
 
-message GetUsersRequest {}
+message GetUsersRequest {
+    string node_id = 1;
+}
 
 message GetUsersResponse {
     repeated User users = 1;
@@ -18,7 +20,7 @@ message GetUsersResponse {
 
 message UploadTrafficLogRequest {
     repeated UserTrafficLog logs = 1;
-    int64 UploadAt = 2;
+    int64 upload_at = 2;
 }
 
 message UploadTrafficLogResponse {}
