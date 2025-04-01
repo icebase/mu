@@ -3,7 +3,6 @@ package v2fly
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"strings"
 
@@ -21,7 +20,6 @@ type Manager struct {
 	statsClient statscmd.StatsServiceClient
 
 	inBoundTag string
-	logger     *slog.Logger
 }
 
 const (
@@ -33,9 +31,9 @@ type TrafficInfo struct {
 	Up, Down int64
 }
 
-func NewManager(addr, tag string, l *slog.Logger) (*Manager, error) {
+func NewManager(addr, tag string) (*Manager, error) {
 	slog.Info("create new mgr", "addr", addr)
-	cc, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	cc, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		slog.Error("grpc dail failed", "addr", addr)
 		return nil, err
@@ -46,20 +44,14 @@ func NewManager(addr, tag string, l *slog.Logger) (*Manager, error) {
 		client:      client,
 		statsClient: statsClient,
 		inBoundTag:  tag,
-		logger:      l,
 	}
-	if m.logger == nil {
-		m.logger = slog.New(slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{}))
-	}
-	return m, nil
-}
 
-func (m *Manager) SetLogger(l *slog.Logger) {
-	m.logger = l
+	return m, nil
 }
 
 // return is exist,and error
 func (m *Manager) AddUser(ctx context.Context, u User) (bool, error) {
+	logger := slog.Default()
 	resp, err := m.client.AlterInbound(ctx, &command.AlterInboundRequest{
 		Tag: m.inBoundTag,
 		Operation: serial.ToTypedMessage(&command.AddUserOperation{
@@ -75,7 +67,7 @@ func (m *Manager) AddUser(ctx context.Context, u User) (bool, error) {
 		}),
 	})
 	if err != nil && !IsAlreadyExistsError(err) {
-		m.logger.Error("failed to call add user",
+		logger.Error("failed to call add user",
 			"resp", resp,
 			"error", err,
 		)
@@ -85,6 +77,7 @@ func (m *Manager) AddUser(ctx context.Context, u User) (bool, error) {
 }
 
 func (m *Manager) RemoveUser(ctx context.Context, u User) error {
+	logger := slog.Default()
 	resp, err := m.client.AlterInbound(ctx, &command.AlterInboundRequest{
 		Tag: m.inBoundTag,
 		Operation: serial.ToTypedMessage(&command.RemoveUserOperation{
@@ -92,23 +85,24 @@ func (m *Manager) RemoveUser(ctx context.Context, u User) error {
 		}),
 	})
 	if err != nil {
-		m.logger.Error("failed to call remove user : ", "error", err)
+		logger.Error("failed to call remove user : ", "error", err)
 		return TODOErr
 	}
-	m.logger.Debug("call remove user resp: ", "resp", resp)
+	logger.Debug("call remove user resp: ", "resp", resp)
 
 	return nil
 }
 
 // @todo error handle
 func (m *Manager) GetTrafficAndReset(ctx context.Context, u User) (TrafficInfo, error) {
+	logger := slog.Default()
 	ti := TrafficInfo{}
 	up, err := m.statsClient.GetStats(ctx, &statscmd.GetStatsRequest{
 		Name:   fmt.Sprintf(UplinkFormat, u.GetEmail()),
 		Reset_: true,
 	})
 	if err != nil && !IsNotFoundError(err) {
-		m.logger.Error("get traffic user ", "u", u, "error", err)
+		logger.Error("get traffic user ", "u", u, "error", err)
 		return ti, err
 	}
 
@@ -117,7 +111,7 @@ func (m *Manager) GetTrafficAndReset(ctx context.Context, u User) (TrafficInfo, 
 		Reset_: true,
 	})
 	if err != nil && !IsNotFoundError(err) {
-		m.logger.Error("get traffic user fail",
+		logger.Error("get traffic user fail",
 			"user", u,
 			"error", err)
 		return ti, nil
