@@ -1,8 +1,18 @@
 package main
 
-import "github.com/icebase/mu/internal/mu/wire"
+import (
+	"log/slog"
+
+	"github.com/icebase/mu/internal/mu/wire"
+)
 
 func main() {
 	app := wire.NewApp()
+	err := app.Init()
+	if err != nil {
+		slog.Error("init failed",
+			"err", err)
+		return
+	}
 	app.Run()
 }

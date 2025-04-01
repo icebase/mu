@@ -10,12 +10,31 @@ import (
 )
 
 type App struct {
+	config *Config
+
 	muClient *mu.Client
 	userSync []UserSync
 }
 
 func New(config *Config) *App {
-	return &App{}
+	return &App{
+		config: config,
+	}
+}
+
+func (a *App) Init() error {
+	a.muClient = mu.NewClient(a.config.MuApiBaseURL, a.config.MuApiToken)
+	for _, addr := range a.config.TrojanAddrs {
+		s, err := newTrojanSync(addr)
+		if err != nil {
+			return err
+		}
+		a.userSync = append(a.userSync, s)
+	}
+	for _, addr := range a.config.V2flyAddrs {
+		a.userSync = append(a.userSync, newV2flySync(addr))
+	}
+	return nil
 }
 
 func (a *App) Run() {
