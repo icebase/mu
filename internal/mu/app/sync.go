@@ -8,4 +8,5 @@ import (
 
 type UserSync interface {
 	Sync(ctx context.Context, users []*pb.User) error
+	GetTraffic(ctx context.Context) ([]*pb.UserTrafficLog, error)
 }

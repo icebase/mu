@@ -39,21 +39,30 @@ func (a *App) Init() error {
 
 func (a *App) Run() {
 	ctx := context.Background()
-	timer := time.NewTimer(10 * time.Second)
+	syncTimer := time.NewTimer(10 * time.Second)
+	trafficTimer := time.NewTimer(30 * time.Second) // 流量统计间隔更长一些
+
 	for {
 		select {
-		case <-timer.C:
-			if err := a.sync(); err != nil {
-				slog.Error("sync failed", "err", err)
+		case <-syncTimer.C:
+			if err := a.syncUser(); err != nil {
+				slog.Error("sync user failed", "err", err)
 			}
-			timer.Reset(10 * time.Second)
+			syncTimer.Reset(10 * time.Second)
+		
+		case <-trafficTimer.C:
+			if err := a.syncTraffic(); err != nil {
+				slog.Error("sync traffic failed", "err", err)
+			}
+			trafficTimer.Reset(30 * time.Second)
+		
 		case <-ctx.Done():
 			return
 		}
 	}
 }
 
-func (a *App) sync() error {
+func (a *App) syncUser() error {
 	ctx := context.Background()
 	resp, err := a.muClient.GetUsers(ctx, &pb.GetUsersRequest{})
 	if err != nil {
@@ -64,5 +73,53 @@ func (a *App) sync() error {
 			return err
 		}
 	}
+	return nil
+}
+
+// syncTraffic 获取并上传用户流量数据
+func (a *App) syncTraffic() error {
+	ctx := context.Background()
+	
+	// 用于累积所有流量数据的切片
+	var allTrafficLogs []*pb.UserTrafficLog
+	
+	// 从每个同步实现中获取流量数据
+	for _, v := range a.userSync {
+		logs, err := v.GetTraffic(ctx)
+		if err != nil {
+			slog.Error("get traffic failed", "err", err)
+			// 继续处理其他同步实现，不中断整个过程
+			continue
+		}
+		
+		// 将获取到的流量数据添加到总集合中
+		if len(logs) > 0 {
+			slog.Info("collected traffic logs", "count", len(logs))
+			allTrafficLogs = append(allTrafficLogs, logs...)
+		}
+	}
+	
+	// 如果有流量数据，上传到服务器
+	if len(allTrafficLogs) > 0 {
+		slog.Info("uploading traffic logs", "count", len(allTrafficLogs))
+		
+		// 构建上传请求
+		uploadReq := &pb.UploadTrafficLogRequest{
+			Logs:      allTrafficLogs,
+			UploadAt:  time.Now().Unix(),
+		}
+		
+		// 上传流量日志
+		_, err := a.muClient.UploadTrafficLog(ctx, uploadReq)
+		if err != nil {
+			slog.Error("failed to upload traffic logs", "err", err)
+			return err
+		}
+		
+		slog.Info("traffic logs uploaded successfully", "count", len(allTrafficLogs))
+	} else {
+		slog.Info("no traffic logs to upload")
+	}
+	
 	return nil
 }
