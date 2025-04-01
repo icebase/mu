@@ -28,6 +28,7 @@ func newTrojanSync(addr string) (*trojanSync, error) {
 
 func (t *trojanSync) Sync(ctx context.Context, users []*pb.User) error {
 	logger := slog.Default().With("method", "trojan_sync")
+	logger.Info("start sync trojan users")
 	tjUsers, err := t.tjManager.ListUsers(ctx)
 	if err != nil {
 		logger.Error("list users failed", "error", err)
@@ -130,7 +131,7 @@ func (t *trojanSync) GetTraffic(ctx context.Context) ([]*pb.UserTrafficLog, erro
 
 		// 首先尝试从状态中获取用户ID
 		userID := int64(0) // 默认ID为0，在没有用户ID时使用
-		
+
 		// 计算流量增量：当前流量 - 之前存储的流量
 		prevStatus, ok := t.userStatusMap[uuid]
 		if ok && prevStatus != nil && prevStatus.TrafficTotal != nil {
@@ -155,7 +156,7 @@ func (t *trojanSync) GetTraffic(ctx context.Context) ([]*pb.UserTrafficLog, erro
 					U:      uploadDiff,
 					D:      downloadDiff,
 				}
-				
+
 				// 添加到结果集
 				trafficLogs = append(trafficLogs, trafficLog)
 				processedCount++
