@@ -24,7 +24,7 @@ type Client struct {
 }
 
 func NewClient(addr string, token string, nodeID string) *Client {
-	client := pb.NewMUServiceJSONClient(addr, http.DefaultClient)
+	client := pb.NewMUServiceJSONClient(addr, http.DefaultClient, twirp.WithClientPathPrefix(""))
 	return &Client{client: client, addr: addr, token: token, nodeID: nodeID}
 }
 
