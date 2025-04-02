@@ -57,7 +57,7 @@ func (v *v2flySync) Sync(ctx context.Context, users []*pb.User) error {
 	for _, v2User := range v2Users {
 		uuid := v2User.User.GetUUID()
 		logger.Debug("checking v2fly user", "uuid", uuid)
-		
+
 		apiUser, ok := apiUsersMap[uuid]
 		if !ok {
 			// 用户不在 API 返回的列表中，应该被删除
@@ -99,7 +99,7 @@ func (v *v2flySync) Sync(ctx context.Context, users []*pb.User) error {
 		if !ok {
 			// 用户不在 v2fly 服务器上，需要添加
 			logger.Info("adding new user", "uuid", uuid)
-			
+
 			// 创建用户对象
 			v2User := &v2flyUser{
 				uuid:    uuid,
@@ -151,7 +151,7 @@ func (u *v2flyUser) GetAlterID() uint32 {
 	return u.alterID
 }
 
-func (v *v2flySync) GetTraffic(ctx context.Context) ([]*pb.UserTrafficLog, error) {
+func (v *v2flySync) GetTraffic(ctx context.Context, users []*pb.User) ([]*pb.UserTrafficLog, error) {
 	logger := slog.Default().With("method", "v2fly_get_traffic")
 	logger.Info("starting traffic collection")
 
@@ -169,7 +169,7 @@ func (v *v2flySync) GetTraffic(ctx context.Context) ([]*pb.UserTrafficLog, error
 	// 处理每个用户的流量数据
 	for _, v2User := range v2Users {
 		uuid := v2User.User.GetUUID()
-		
+
 		// 检查是否有流量数据
 		if v2User.TrafficInfo.Up == 0 && v2User.TrafficInfo.Down == 0 {
 			continue // 跳过没有流量的用户

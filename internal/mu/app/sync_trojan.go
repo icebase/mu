@@ -98,24 +98,17 @@ func (t *trojanSync) Sync(ctx context.Context, users []*pb.User) error {
 	return nil
 }
 
-func (t *trojanSync) GetTraffic(ctx context.Context) ([]*pb.UserTrafficLog, error) {
+func (t *trojanSync) GetTraffic(ctx context.Context, users []*pb.User) ([]*pb.UserTrafficLog, error) {
 	logger := slog.Default().With("method", "trojan_get_traffic")
 	logger.Info("starting traffic collection")
-
-	// Get all users from trojan server
-	tjUsers, err := t.tjManager.ListUsers(ctx)
-	if err != nil {
-		logger.Error("failed to list users", "error", err)
-		return nil, err
-	}
 
 	// 创建收集流量数据的结果集
 	var trafficLogs []*pb.UserTrafficLog
 
 	// Process each trojan user
 	processedCount := 0
-	for _, tjUser := range tjUsers {
-		uuid := tjUser.User.Password // Using password as UUID
+	for _, user := range users {
+		uuid := user.V2RayUser.Uuid
 
 		// Get detailed user information including traffic
 		userResp, err := t.tjManager.GetUser(ctx, uuid)

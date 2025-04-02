@@ -96,9 +96,15 @@ func (a *App) syncTraffic() error {
 	// 用于累积所有流量数据的切片
 	var allTrafficLogs []*pb.UserTrafficLog
 
+	resp, err := a.muClient.GetUsers(ctx, &pb.GetUsersRequest{})
+	if err != nil {
+		slog.Error("get users failed", "err", err)
+		return err
+	}
+
 	// 从每个同步实现中获取流量数据
 	for _, v := range a.userSync {
-		logs, err := v.GetTraffic(ctx)
+		logs, err := v.GetTraffic(ctx, resp.Users)
 		if err != nil {
 			slog.Error("get traffic failed", "err", err)
 			// 继续处理其他同步实现，不中断整个过程
