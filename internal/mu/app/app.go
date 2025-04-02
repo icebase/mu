@@ -43,8 +43,7 @@ func (a *App) Init() error {
 
 func (a *App) Run() {
 	ctx := context.Background()
-	syncTimer := time.NewTimer(10 * time.Second)
-	trafficTimer := time.NewTimer(30 * time.Second) // 流量统计间隔更长一些
+	syncTimer := time.NewTimer(60 * time.Second)
 
 	for {
 		select {
@@ -52,14 +51,10 @@ func (a *App) Run() {
 			if err := a.syncUser(); err != nil {
 				slog.Error("sync user failed", "err", err)
 			}
-			syncTimer.Reset(10 * time.Second)
-
-		case <-trafficTimer.C:
 			if err := a.syncTraffic(); err != nil {
 				slog.Error("sync traffic failed", "err", err)
 			}
-			trafficTimer.Reset(30 * time.Second)
-
+			syncTimer.Reset(60 * time.Second)
 		case <-ctx.Done():
 			return
 		}
@@ -82,6 +77,7 @@ func (a *App) syncUser() error {
 
 // syncTraffic 获取并上传用户流量数据
 func (a *App) syncTraffic() error {
+	slog.Info("syncing traffic")
 	ctx := context.Background()
 
 	// 用于累积所有流量数据的切片
