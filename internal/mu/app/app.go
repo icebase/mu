@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/icebase/mu"
@@ -14,6 +15,9 @@ type App struct {
 
 	muClient *mu.Client
 	userSync []UserSync
+
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 func New(config *Config) *App {
@@ -23,6 +27,7 @@ func New(config *Config) *App {
 }
 
 func (a *App) Init() error {
+	a.ctx, a.cancel = context.WithCancel(context.Background())
 	a.muClient = mu.NewClient(a.config.MuApiBaseURL, a.config.MuApiToken, a.config.MuNodeID)
 	for _, addr := range a.config.TrojanAddrs {
 		s, err := newTrojanSync(addr)
@@ -42,7 +47,15 @@ func (a *App) Init() error {
 }
 
 func (a *App) Run() {
-	ctx := context.Background()
+	go a.jobs()
+	sigs := make(chan os.Signal, 1)
+	sig := <-sigs
+	slog.Info("recv signale", "signal", sig)
+	a.cancel()
+	os.Exit(0)
+}
+
+func (a *App) jobs() {
 	syncTimer := time.NewTimer(60 * time.Second)
 
 	for {
@@ -55,14 +68,14 @@ func (a *App) Run() {
 				slog.Error("sync traffic failed", "err", err)
 			}
 			syncTimer.Reset(60 * time.Second)
-		case <-ctx.Done():
+		case <-a.ctx.Done():
 			return
 		}
 	}
 }
 
 func (a *App) syncUser() error {
-	ctx := context.Background()
+	ctx := a.ctx
 	resp, err := a.muClient.GetUsers(ctx, &pb.GetUsersRequest{})
 	if err != nil {
 		return err
@@ -78,8 +91,8 @@ func (a *App) syncUser() error {
 // syncTraffic 获取并上传用户流量数据
 func (a *App) syncTraffic() error {
 	slog.Info("syncing traffic")
-	ctx := context.Background()
 
+	ctx := a.ctx
 	// 用于累积所有流量数据的切片
 	var allTrafficLogs []*pb.UserTrafficLog
 
