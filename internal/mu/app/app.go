@@ -23,7 +23,7 @@ func New(config *Config) *App {
 }
 
 func (a *App) Init() error {
-	a.muClient = mu.NewClient(a.config.MuApiBaseURL, a.config.MuApiToken)
+	a.muClient = mu.NewClient(a.config.MuApiBaseURL, a.config.MuApiToken, a.config.MuNodeID)
 	for _, addr := range a.config.TrojanAddrs {
 		s, err := newTrojanSync(addr)
 		if err != nil {

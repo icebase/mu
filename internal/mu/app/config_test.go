@@ -11,6 +11,7 @@ func TestConfigFromEnv(t *testing.T) {
 	originalEnvVars := map[string]string{
 		"MU_API_BASE_URL": os.Getenv("MU_API_BASE_URL"),
 		"MU_API_TOKEN":    os.Getenv("MU_API_TOKEN"),
+		"MU_NODE_ID":      os.Getenv("MU_NODE_ID"),
 		"MU_TROJAN_ADDRS": os.Getenv("MU_TROJAN_ADDRS"),
 		"MU_V2FLY_ADDRS":  os.Getenv("MU_V2FLY_ADDRS"),
 	}
@@ -36,12 +37,14 @@ func TestConfigFromEnv(t *testing.T) {
 			envVars: map[string]string{
 				"MU_API_BASE_URL": "",
 				"MU_API_TOKEN":    "",
+				"MU_NODE_ID":      "",
 				"MU_TROJAN_ADDRS": "",
 				"MU_V2FLY_ADDRS":  "",
 			},
 			expected: &Config{
 				MuApiBaseURL: "",
 				MuApiToken:   "",
+				MuNodeID:     "",
 				TrojanAddrs:  nil,
 				V2flyAddrs:   nil,
 			},
@@ -51,12 +54,14 @@ func TestConfigFromEnv(t *testing.T) {
 			envVars: map[string]string{
 				"MU_API_BASE_URL": "https://api.example.com",
 				"MU_API_TOKEN":    "test-token",
+				"MU_NODE_ID":      "node-1",
 				"MU_TROJAN_ADDRS": "trojan1.example.com,trojan2.example.com",
 				"MU_V2FLY_ADDRS":  "v2fly1.example.com,v2fly2.example.com",
 			},
 			expected: &Config{
 				MuApiBaseURL: "https://api.example.com",
 				MuApiToken:   "test-token",
+				MuNodeID:     "node-1",
 				TrojanAddrs:  []string{"trojan1.example.com", "trojan2.example.com"},
 				V2flyAddrs:   []string{"v2fly1.example.com", "v2fly2.example.com"},
 			},
@@ -66,12 +71,14 @@ func TestConfigFromEnv(t *testing.T) {
 			envVars: map[string]string{
 				"MU_API_BASE_URL": "https://api.example.com",
 				"MU_API_TOKEN":    "test-token",
+				"MU_NODE_ID":      "node-2",
 				"MU_TROJAN_ADDRS": "",
 				"MU_V2FLY_ADDRS":  "v2fly.example.com",
 			},
 			expected: &Config{
 				MuApiBaseURL: "https://api.example.com",
 				MuApiToken:   "test-token",
+				MuNodeID:     "node-2",
 				TrojanAddrs:  nil,
 				V2flyAddrs:   []string{"v2fly.example.com"},
 			},
