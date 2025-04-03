@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	tag = "api"
+	tag = "proxy"
 )
 
 type v2flySync struct {
