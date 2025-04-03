@@ -1,6 +1,7 @@
 module github.com/icebase/mu
 
 go 1.23.6
+toolchain go1.24.1
 
 require (
 	connectrpc.com/connect v1.18.1
@@ -35,7 +36,7 @@ require (
 	github.com/xtaci/smux v1.5.24 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
-	golang.org/x/net v0.35.0 // indirect
+	golang.org/x/net v0.36.0 // indirect
 	golang.org/x/sys v0.30.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
 	golang.org/x/time v0.8.0 // indirect
