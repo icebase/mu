@@ -123,7 +123,7 @@ func (t *trojanSync) GetTraffic(ctx context.Context, users []*pb.User) ([]*pb.Us
 		}
 
 		// 首先尝试从状态中获取用户ID
-		userID := int64(0) // 默认ID为0，在没有用户ID时使用
+		userID := user.Id
 
 		// 计算流量增量：当前流量 - 之前存储的流量
 		prevStatus, ok := t.userStatusMap[uuid]
