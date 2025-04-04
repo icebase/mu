@@ -162,6 +162,14 @@ func (v *v2flySync) GetTraffic(ctx context.Context, users []*pb.User) ([]*pb.Use
 		return nil, err
 	}
 
+	// 创建 UUID 到 UserID 的映射
+	uuidToUserID := make(map[string]int64)
+	for _, user := range users {
+		if user.V2RayUser != nil && user.V2RayUser.Uuid != "" {
+			uuidToUserID[user.V2RayUser.Uuid] = user.Id
+		}
+	}
+
 	// 创建流量日志结果集
 	var trafficLogs []*pb.UserTrafficLog
 	processedCount := 0
@@ -175,9 +183,16 @@ func (v *v2flySync) GetTraffic(ctx context.Context, users []*pb.User) ([]*pb.Use
 			continue // 跳过没有流量的用户
 		}
 
+		// 获取对应的 UserID
+		userID, ok := uuidToUserID[uuid]
+		if !ok {
+			logger.Warn("user not found in mapping", "uuid", uuid)
+			continue // 如果找不到对应的 UserID，跳过这条记录
+		}
+
 		// 创建流量日志
 		trafficLog := &pb.UserTrafficLog{
-			UserId: 0, // 此处设置为0，因为我们只有UUID没有用户ID
+			UserId: userID,
 			Uuid:   uuid,
 			U:      v2User.TrafficInfo.Up,
 			D:      v2User.TrafficInfo.Down,
@@ -189,6 +204,7 @@ func (v *v2flySync) GetTraffic(ctx context.Context, users []*pb.User) ([]*pb.Use
 
 		logger.Info("processed traffic data",
 			"uuid", uuid,
+			"user_id", userID,
 			"upload", v2User.TrafficInfo.Up,
 			"download", v2User.TrafficInfo.Down)
 	}
