@@ -57,11 +57,11 @@ func (t *trojanSync) Sync(ctx context.Context, users []*pb.User) error {
 		password := tjUser.User.Password
 		muUser, exists := muUsersMap[password]
 
-		// If user doesn't exist in mu or is disabled, remove from trojan
-		if !exists || muUser.Enable == 0 {
+		// If user is enabled in mu, remove from trojan
+		if exists && muUser.Enable == 1 {
 			logger.Info("removing user", "password", password,
 				"exists_in_mu", exists,
-				"enabled", exists && muUser.Enable == 1)
+				"enabled", muUser.Enable)
 
 			err := t.tjManager.RemoveUser(ctx, password, "")
 			if err != nil {
