@@ -93,7 +93,6 @@ func (m *Manager) RemoveUser(ctx context.Context, u User) error {
 	return nil
 }
 
-// @todo error handle
 func (m *Manager) GetTrafficAndReset(ctx context.Context, u User) (TrafficInfo, error) {
 	logger := slog.Default()
 	ti := TrafficInfo{}

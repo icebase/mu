@@ -9,6 +9,15 @@ type User interface {
 
 var _ User = user{}
 
+func NewUser(email, uuid string, alterID, level uint32) User {
+	return user{
+		email:   email,
+		uuid:    uuid,
+		alterID: alterID,
+		level:   level,
+	}
+}
+
 type user struct {
 	email   string
 	uuid    string

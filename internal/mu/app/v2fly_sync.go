@@ -155,13 +155,6 @@ func (v *v2flySync) GetTraffic(ctx context.Context, users []*pb.User) ([]*pb.Use
 	logger := slog.Default().With("method", "v2fly_get_traffic")
 	logger.Info("starting traffic collection")
 
-	// 获取所有用户及其流量信息
-	v2Users, err := v.manager.GetUserList(ctx, true) // 设置 reset 为 true，获取并重置流量统计
-	if err != nil {
-		logger.Error("failed to get v2fly user list", "error", err)
-		return nil, err
-	}
-
 	// 创建 UUID 到 UserID 的映射
 	uuidToUserID := make(map[string]int64)
 	for _, user := range users {
@@ -171,7 +164,6 @@ func (v *v2flySync) GetTraffic(ctx context.Context, users []*pb.User) ([]*pb.Use
 	}
 
 	logger.Info("v2fly user list",
-		"v2fly_user_list", len(v2Users),
 		"users_count", len(users))
 
 	// 创建流量日志结果集
@@ -179,28 +171,21 @@ func (v *v2flySync) GetTraffic(ctx context.Context, users []*pb.User) ([]*pb.Use
 	processedCount := 0
 
 	// 处理每个用户的流量数据
-	for _, v2User := range v2Users {
-		uuid := v2User.User.GetUUID()
+	for _, user := range users {
 
-		// 检查是否有流量数据
-		if v2User.TrafficInfo.Up == 0 && v2User.TrafficInfo.Down == 0 {
-			logger.Info("skipping user with no traffic", "uuid", uuid)
-			continue // 跳过没有流量的用户
-		}
-
-		// 获取对应的 UserID
-		userID, ok := uuidToUserID[uuid]
-		if !ok {
-			logger.Warn("user not found in mapping", "uuid", uuid)
-			continue // 如果找不到对应的 UserID，跳过这条记录
+		trafficInfo, err := v.manager.GetTrafficAndReset(ctx, v2fly.NewUser(user.V2RayUser.Email, user.V2RayUser.Uuid, user.V2RayUser.AlterId, user.V2RayUser.Level))
+		if err != nil {
+			logger.Error("failed to get traffic",
+				"uuid", user.V2RayUser.Uuid, "error", err)
+			continue
 		}
 
 		// 创建流量日志
 		trafficLog := &pb.UserTrafficLog{
-			UserId: userID,
-			Uuid:   uuid,
-			U:      v2User.TrafficInfo.Up,
-			D:      v2User.TrafficInfo.Down,
+			UserId: user.Id,
+			Uuid:   user.V2RayUser.Uuid,
+			U:      trafficInfo.Up,
+			D:      trafficInfo.Down,
 		}
 
 		// 添加到结果集
@@ -208,10 +193,10 @@ func (v *v2flySync) GetTraffic(ctx context.Context, users []*pb.User) ([]*pb.Use
 		processedCount++
 
 		logger.Info("processed traffic data",
-			"uuid", uuid,
-			"user_id", userID,
-			"upload", v2User.TrafficInfo.Up,
-			"download", v2User.TrafficInfo.Down)
+			"uuid", user.V2RayUser.Uuid,
+			"user_id", user.Id,
+			"upload", trafficInfo.Up,
+			"download", trafficInfo.Down)
 	}
 
 	logger.Info("completed traffic collection", "processed_count", processedCount, "logs_count", len(trafficLogs))
