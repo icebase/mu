@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 
 	"github.com/icebase/mu/pkg/v2fly"
@@ -95,6 +94,7 @@ func (v *v2flySync) Sync(ctx context.Context, users []*pb.User) error {
 		}
 
 		uuid := apiUser.V2RayUser.Uuid
+		email := apiUser.V2RayUser.Email
 		_, ok := v2UsersMap[uuid]
 		if !ok {
 			// 用户不在 v2fly 服务器上，需要添加
@@ -103,9 +103,9 @@ func (v *v2flySync) Sync(ctx context.Context, users []*pb.User) error {
 			// 创建用户对象
 			v2User := &v2flyUser{
 				uuid:    uuid,
-				email:   fmt.Sprintf("%s@v2fly.local", uuid),
-				level:   0,
-				alterID: 0,
+				email:   email,
+				level:   apiUser.V2RayUser.Level,
+				alterID: apiUser.V2RayUser.AlterId,
 			}
 
 			// 添加用户到 v2fly 服务器
