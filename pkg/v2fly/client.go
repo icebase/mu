@@ -132,12 +132,15 @@ type UserData struct {
 }
 
 func (m *Manager) GetUserList(ctx context.Context, reset bool) ([]UserData, error) {
+	logger := slog.Default().With("method", "v2fly_get_user_list")
 	resp, err := m.statsClient.QueryStats(ctx, &statscmd.QueryStatsRequest{
 		Reset_: reset,
 	})
 	if err != nil {
+		logger.Error("failed to call query stats", "error", err)
 		return nil, err
 	}
+	logger.Info("query stats resp", "resp.stat.len", len(resp.Stat))
 
 	var users = make(map[string]UserData)
 
