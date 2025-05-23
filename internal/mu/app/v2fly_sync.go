@@ -170,6 +170,10 @@ func (v *v2flySync) GetTraffic(ctx context.Context, users []*pb.User) ([]*pb.Use
 		}
 	}
 
+	logger.Info("v2fly user list",
+		"v2fly_user_list", len(v2Users),
+		"users_count", len(users))
+
 	// 创建流量日志结果集
 	var trafficLogs []*pb.UserTrafficLog
 	processedCount := 0
