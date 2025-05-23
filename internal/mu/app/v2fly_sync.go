@@ -184,6 +184,7 @@ func (v *v2flySync) GetTraffic(ctx context.Context, users []*pb.User) ([]*pb.Use
 
 		// 检查是否有流量数据
 		if v2User.TrafficInfo.Up == 0 && v2User.TrafficInfo.Down == 0 {
+			logger.Info("skipping user with no traffic", "uuid", uuid)
 			continue // 跳过没有流量的用户
 		}
 
