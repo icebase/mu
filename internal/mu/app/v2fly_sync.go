@@ -153,18 +153,7 @@ func (u *v2flyUser) GetAlterID() uint32 {
 
 func (v *v2flySync) GetTraffic(ctx context.Context, users []*pb.User) ([]*pb.UserTrafficLog, error) {
 	logger := slog.Default().With("method", "v2fly_get_traffic")
-	logger.Info("starting traffic collection")
-
-	// 创建 UUID 到 UserID 的映射
-	uuidToUserID := make(map[string]int64)
-	for _, user := range users {
-		if user.V2RayUser != nil && user.V2RayUser.Uuid != "" {
-			uuidToUserID[user.V2RayUser.Uuid] = user.Id
-		}
-	}
-
-	logger.Info("v2fly user list",
-		"users_count", len(users))
+	logger.Info("starting traffic collection", "users_count", len(users))
 
 	// 创建流量日志结果集
 	var trafficLogs []*pb.UserTrafficLog
