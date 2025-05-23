@@ -162,10 +162,17 @@ func (v *v2flySync) GetTraffic(ctx context.Context, users []*pb.User) ([]*pb.Use
 	// 处理每个用户的流量数据
 	for _, user := range users {
 
-		trafficInfo, err := v.manager.GetTrafficAndReset(ctx, v2fly.NewUser(user.V2RayUser.Email, user.V2RayUser.Uuid, user.V2RayUser.AlterId, user.V2RayUser.Level))
+		trafficInfo, err := v.manager.GetTrafficAndReset(ctx,
+			v2fly.NewUser(user.V2RayUser.Email, user.V2RayUser.Uuid, user.V2RayUser.AlterId, user.V2RayUser.Level))
 		if err != nil {
 			logger.Error("failed to get traffic",
 				"uuid", user.V2RayUser.Uuid, "error", err)
+			continue
+		}
+
+		if trafficInfo.Up == 0 && trafficInfo.Down == 0 {
+			logger.Info("skipping user with no traffic",
+				"uuid", user.V2RayUser.Uuid)
 			continue
 		}
 
