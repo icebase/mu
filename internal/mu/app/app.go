@@ -61,11 +61,11 @@ func (a *App) jobs() {
 	for {
 		select {
 		case <-syncTimer.C:
-			if err := a.syncUser(); err != nil {
-				slog.Error("sync user failed", "err", err)
-			}
 			if err := a.syncTraffic(); err != nil {
 				slog.Error("sync traffic failed", "err", err)
+			}
+			if err := a.syncUser(); err != nil {
+				slog.Error("sync user failed", "err", err)
 			}
 			syncTimer.Reset(60 * time.Second)
 		case <-a.ctx.Done():
