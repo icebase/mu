@@ -159,6 +159,8 @@ func (v *v2flySync) GetTraffic(ctx context.Context, users []*pb.User) ([]*pb.Use
 	var trafficLogs []*pb.UserTrafficLog
 	processedCount := 0
 
+	var u, d int64
+
 	// 处理每个用户的流量数据
 	for _, user := range users {
 
@@ -186,6 +188,9 @@ func (v *v2flySync) GetTraffic(ctx context.Context, users []*pb.User) ([]*pb.Use
 			D:      trafficInfo.Down,
 		}
 
+		u += trafficInfo.Up
+		d += trafficInfo.Down
+
 		// 添加到结果集
 		trafficLogs = append(trafficLogs, trafficLog)
 		processedCount++
@@ -197,6 +202,7 @@ func (v *v2flySync) GetTraffic(ctx context.Context, users []*pb.User) ([]*pb.Use
 			"download", trafficInfo.Down)
 	}
 
-	logger.Info("completed traffic collection", "processed_count", processedCount, "logs_count", len(trafficLogs))
+	logger.Info("completed traffic collection",
+		"processed_count", processedCount, "logs_count", len(trafficLogs), "upload", u, "download", d)
 	return trafficLogs, nil
 }
