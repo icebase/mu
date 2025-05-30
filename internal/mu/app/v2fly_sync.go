@@ -166,12 +166,14 @@ func (v *v2flySync) GetTraffic(ctx context.Context, users []*pb.User) ([]*pb.Use
 			v2fly.NewUser(user.V2RayUser.Email, user.V2RayUser.Uuid, user.V2RayUser.AlterId, user.V2RayUser.Level))
 		if err != nil {
 			logger.Error("failed to get traffic",
-				"uuid", user.V2RayUser.Uuid, "error", err)
+				"uuid", user.V2RayUser.Uuid,
+				"error", err)
 			continue
 		}
 
 		if trafficInfo.Up == 0 && trafficInfo.Down == 0 {
 			logger.Info("skipping user with no traffic",
+				"email", user.V2RayUser.Email,
 				"uuid", user.V2RayUser.Uuid)
 			continue
 		}
