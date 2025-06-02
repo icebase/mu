@@ -48,7 +48,7 @@ func (t *Manager) ListUsers(ctx context.Context) ([]*service.UserStatus, error) 
 }
 
 func (t *Manager) GetUser(ctx context.Context, password string) (*service.GetUsersResponse, error) {
-	logger := slog.Default()
+	logger := slog.Default().With("method", "trojan.GetUser")
 	var err error
 
 	ctx, cancel := context.WithTimeout(ctx, time.Second*10)
@@ -83,7 +83,7 @@ func (t *Manager) GetUser(ctx context.Context, password string) (*service.GetUse
 }
 
 func (t *Manager) RemoveUser(ctx context.Context, password, hash string) error {
-	logger := slog.Default()
+	logger := slog.Default().With("method", "trojan.RemoveUser")
 	var err error
 
 	ctx, cancel := context.WithTimeout(ctx, time.Second*10)
@@ -124,7 +124,7 @@ func (t *Manager) RemoveUser(ctx context.Context, password, hash string) error {
 }
 
 func (t *Manager) AddUser(ctx context.Context, password string) error {
-	logger := slog.Default()
+	logger := slog.Default().With("method", "trojan.AddUser")
 	var err error
 	ctx, cancel := context.WithTimeout(ctx, time.Second*10)
 	defer cancel()

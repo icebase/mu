@@ -27,6 +27,10 @@ func newV2flySync(addr string) (*v2flySync, error) {
 	}, nil
 }
 
+func (v *v2flySync) Name() string {
+	return "v2fly"
+}
+
 func (v *v2flySync) Sync(ctx context.Context, users []*pb.User) error {
 	logger := slog.Default().With("method", "v2fly_sync")
 	logger.Info("starting user sync", "users_count", len(users))

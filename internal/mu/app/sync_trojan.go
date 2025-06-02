@@ -26,6 +26,10 @@ func newTrojanSync(addr string) (*trojanSync, error) {
 	}, nil
 }
 
+func (t *trojanSync) Name() string {
+	return "trojan"
+}
+
 func (t *trojanSync) Sync(ctx context.Context, users []*pb.User) error {
 	logger := slog.Default().With("method", "trojan_sync")
 	logger.Info("start sync trojan users")

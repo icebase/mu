@@ -113,7 +113,9 @@ func (a *App) syncTraffic() error {
 
 		// 将获取到的流量数据添加到总集合中
 		if len(logs) > 0 {
-			slog.Info("collected traffic logs", "count", len(logs))
+			slog.Info("collected traffic logs",
+				"count", len(logs),
+				"sync", v.Name())
 			allTrafficLogs = append(allTrafficLogs, logs...)
 		}
 	}
