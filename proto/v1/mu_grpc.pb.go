@@ -19,6 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	MUService_Ping_FullMethodName             = "/v1.MUService/Ping"
 	MUService_GetUsers_FullMethodName         = "/v1.MUService/GetUsers"
 	MUService_UploadTrafficLog_FullMethodName = "/v1.MUService/UploadTrafficLog"
 )
@@ -27,6 +28,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type MUServiceClient interface {
+	Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error)
 	GetUsers(ctx context.Context, in *GetUsersRequest, opts ...grpc.CallOption) (*GetUsersResponse, error)
 	UploadTrafficLog(ctx context.Context, in *UploadTrafficLogRequest, opts ...grpc.CallOption) (*UploadTrafficLogResponse, error)
 }
@@ -37,6 +39,16 @@ type mUServiceClient struct {
 
 func NewMUServiceClient(cc grpc.ClientConnInterface) MUServiceClient {
 	return &mUServiceClient{cc}
+}
+
+func (c *mUServiceClient) Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PingResponse)
+	err := c.cc.Invoke(ctx, MUService_Ping_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *mUServiceClient) GetUsers(ctx context.Context, in *GetUsersRequest, opts ...grpc.CallOption) (*GetUsersResponse, error) {
@@ -63,6 +75,7 @@ func (c *mUServiceClient) UploadTrafficLog(ctx context.Context, in *UploadTraffi
 // All implementations must embed UnimplementedMUServiceServer
 // for forward compatibility.
 type MUServiceServer interface {
+	Ping(context.Context, *PingRequest) (*PingResponse, error)
 	GetUsers(context.Context, *GetUsersRequest) (*GetUsersResponse, error)
 	UploadTrafficLog(context.Context, *UploadTrafficLogRequest) (*UploadTrafficLogResponse, error)
 	mustEmbedUnimplementedMUServiceServer()
@@ -75,6 +88,9 @@ type MUServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedMUServiceServer struct{}
 
+func (UnimplementedMUServiceServer) Ping(context.Context, *PingRequest) (*PingResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Ping not implemented")
+}
 func (UnimplementedMUServiceServer) GetUsers(context.Context, *GetUsersRequest) (*GetUsersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetUsers not implemented")
 }
@@ -100,6 +116,24 @@ func RegisterMUServiceServer(s grpc.ServiceRegistrar, srv MUServiceServer) {
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&MUService_ServiceDesc, srv)
+}
+
+func _MUService_Ping_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MUServiceServer).Ping(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MUService_Ping_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MUServiceServer).Ping(ctx, req.(*PingRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _MUService_GetUsers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -145,6 +179,10 @@ var MUService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "v1.MUService",
 	HandlerType: (*MUServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "Ping",
+			Handler:    _MUService_Ping_Handler,
+		},
 		{
 			MethodName: "GetUsers",
 			Handler:    _MUService_GetUsers_Handler,

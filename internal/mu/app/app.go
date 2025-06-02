@@ -10,6 +10,10 @@ import (
 	pb "github.com/icebase/mu/proto/v1"
 )
 
+const (
+	version = "v0.0.1"
+)
+
 type App struct {
 	config *Config
 
@@ -61,6 +65,9 @@ func (a *App) jobs() {
 	for {
 		select {
 		case <-syncTimer.C:
+			if err := a.ping(); err != nil {
+				slog.Error("ping failed", "err", err)
+			}
 			if err := a.syncTraffic(); err != nil {
 				slog.Error("sync traffic failed", "err", err)
 			}
@@ -72,6 +79,15 @@ func (a *App) jobs() {
 			return
 		}
 	}
+}
+
+func (a *App) ping() error {
+	ctx := a.ctx
+	_, err := a.muClient.Ping(ctx, &pb.PingRequest{
+		Version: version,
+		NodeId:  a.config.MuNodeID,
+	})
+	return err
 }
 
 func (a *App) syncUser() error {

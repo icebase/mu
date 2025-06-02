@@ -6,6 +6,7 @@ package v1;
 option go_package = "github.com/icebase/mu/proto/v1";
 
 service MUService {
+    rpc Ping(PingRequest) returns (PingResponse) {}
     rpc GetUsers(GetUsersRequest) returns (GetUsersResponse) {}
     rpc UploadTrafficLog(UploadTrafficLogRequest) returns (UploadTrafficLogResponse) {}
 }
@@ -51,4 +52,19 @@ message UserTrafficLog {
     int64 u = 3;
     int64 d = 4;
     int32 traffic_type = 5;
+}
+
+
+enum TrafficType {
+    TRAFFIC_TYPE_UNSPECIFIED = 0;
+    TRAFFIC_TYPE_V2FLY = 1;
+    TRAFFIC_TYPE_TROJAN = 2;
+}
+
+message PingRequest {
+    string node_id = 1;
+    string version = 2;
+}
+
+message PingResponse {
 }

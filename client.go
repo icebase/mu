@@ -48,3 +48,7 @@ func (c *Client) UploadTrafficLog(ctx context.Context, req *pb.UploadTrafficLogR
 	req.UploadAt = time.Now().Unix()
 	return c.client.UploadTrafficLog(c.newContext(ctx), req)
 }
+
+func (c *Client) Ping(ctx context.Context, req *pb.PingRequest) (*pb.PingResponse, error) {
+	return c.client.Ping(c.newContext(ctx), req)
+}

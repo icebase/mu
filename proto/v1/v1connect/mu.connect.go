@@ -33,6 +33,8 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// MUServicePingProcedure is the fully-qualified name of the MUService's Ping RPC.
+	MUServicePingProcedure = "/v1.MUService/Ping"
 	// MUServiceGetUsersProcedure is the fully-qualified name of the MUService's GetUsers RPC.
 	MUServiceGetUsersProcedure = "/v1.MUService/GetUsers"
 	// MUServiceUploadTrafficLogProcedure is the fully-qualified name of the MUService's
@@ -42,6 +44,7 @@ const (
 
 // MUServiceClient is a client for the v1.MUService service.
 type MUServiceClient interface {
+	Ping(context.Context, *connect.Request[v1.PingRequest]) (*connect.Response[v1.PingResponse], error)
 	GetUsers(context.Context, *connect.Request[v1.GetUsersRequest]) (*connect.Response[v1.GetUsersResponse], error)
 	UploadTrafficLog(context.Context, *connect.Request[v1.UploadTrafficLogRequest]) (*connect.Response[v1.UploadTrafficLogResponse], error)
 }
@@ -57,6 +60,12 @@ func NewMUServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...c
 	baseURL = strings.TrimRight(baseURL, "/")
 	mUServiceMethods := v1.File_v1_mu_proto.Services().ByName("MUService").Methods()
 	return &mUServiceClient{
+		ping: connect.NewClient[v1.PingRequest, v1.PingResponse](
+			httpClient,
+			baseURL+MUServicePingProcedure,
+			connect.WithSchema(mUServiceMethods.ByName("Ping")),
+			connect.WithClientOptions(opts...),
+		),
 		getUsers: connect.NewClient[v1.GetUsersRequest, v1.GetUsersResponse](
 			httpClient,
 			baseURL+MUServiceGetUsersProcedure,
@@ -74,8 +83,14 @@ func NewMUServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...c
 
 // mUServiceClient implements MUServiceClient.
 type mUServiceClient struct {
+	ping             *connect.Client[v1.PingRequest, v1.PingResponse]
 	getUsers         *connect.Client[v1.GetUsersRequest, v1.GetUsersResponse]
 	uploadTrafficLog *connect.Client[v1.UploadTrafficLogRequest, v1.UploadTrafficLogResponse]
+}
+
+// Ping calls v1.MUService.Ping.
+func (c *mUServiceClient) Ping(ctx context.Context, req *connect.Request[v1.PingRequest]) (*connect.Response[v1.PingResponse], error) {
+	return c.ping.CallUnary(ctx, req)
 }
 
 // GetUsers calls v1.MUService.GetUsers.
@@ -90,6 +105,7 @@ func (c *mUServiceClient) UploadTrafficLog(ctx context.Context, req *connect.Req
 
 // MUServiceHandler is an implementation of the v1.MUService service.
 type MUServiceHandler interface {
+	Ping(context.Context, *connect.Request[v1.PingRequest]) (*connect.Response[v1.PingResponse], error)
 	GetUsers(context.Context, *connect.Request[v1.GetUsersRequest]) (*connect.Response[v1.GetUsersResponse], error)
 	UploadTrafficLog(context.Context, *connect.Request[v1.UploadTrafficLogRequest]) (*connect.Response[v1.UploadTrafficLogResponse], error)
 }
@@ -101,6 +117,12 @@ type MUServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewMUServiceHandler(svc MUServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	mUServiceMethods := v1.File_v1_mu_proto.Services().ByName("MUService").Methods()
+	mUServicePingHandler := connect.NewUnaryHandler(
+		MUServicePingProcedure,
+		svc.Ping,
+		connect.WithSchema(mUServiceMethods.ByName("Ping")),
+		connect.WithHandlerOptions(opts...),
+	)
 	mUServiceGetUsersHandler := connect.NewUnaryHandler(
 		MUServiceGetUsersProcedure,
 		svc.GetUsers,
@@ -115,6 +137,8 @@ func NewMUServiceHandler(svc MUServiceHandler, opts ...connect.HandlerOption) (s
 	)
 	return "/v1.MUService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case MUServicePingProcedure:
+			mUServicePingHandler.ServeHTTP(w, r)
 		case MUServiceGetUsersProcedure:
 			mUServiceGetUsersHandler.ServeHTTP(w, r)
 		case MUServiceUploadTrafficLogProcedure:
@@ -127,6 +151,10 @@ func NewMUServiceHandler(svc MUServiceHandler, opts ...connect.HandlerOption) (s
 
 // UnimplementedMUServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedMUServiceHandler struct{}
+
+func (UnimplementedMUServiceHandler) Ping(context.Context, *connect.Request[v1.PingRequest]) (*connect.Response[v1.PingResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("v1.MUService.Ping is not implemented"))
+}
 
 func (UnimplementedMUServiceHandler) GetUsers(context.Context, *connect.Request[v1.GetUsersRequest]) (*connect.Response[v1.GetUsersResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("v1.MUService.GetUsers is not implemented"))
