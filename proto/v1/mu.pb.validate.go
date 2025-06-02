@@ -792,6 +792,8 @@ func (m *UserTrafficLog) validate(all bool) error {
 
 	// no validation rules for D
 
+	// no validation rules for TrafficType
+
 	if len(errors) > 0 {
 		return UserTrafficLogMultiError(errors)
 	}

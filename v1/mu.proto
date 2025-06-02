@@ -50,4 +50,5 @@ message UserTrafficLog {
     string uuid = 2;
     int64 u = 3;
     int64 d = 4;
+    int32 traffic_type = 5;
 }
