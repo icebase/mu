@@ -120,7 +120,7 @@ func (v *v2flySync) Sync(ctx context.Context, users []*pb.User) error {
 			}
 
 			if exist {
-				logger.Info("user already exists", "uuid", uuid)
+				logger.Debug("user already exists", "uuid", uuid)
 			} else {
 				logger.Info("user added successfully", "uuid", uuid)
 			}

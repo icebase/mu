@@ -3,6 +3,7 @@ package app
 import (
 	"strings"
 
+	"github.com/icebase/mu/internal/mu/app/tracing"
 	"github.com/spf13/viper"
 )
 
@@ -13,6 +14,13 @@ type Config struct {
 
 	TrojanAddrs []string
 	V2flyAddrs  []string
+
+	// Metrics 配置
+	MetricsEnabled bool
+	MetricsPort    string
+
+	// Tracing 配置
+	Tracing tracing.Config
 }
 
 // ConfigFromEnv initializes and returns a Config object with values from environment variables.
@@ -32,6 +40,17 @@ func ConfigFromEnv() *Config {
 	v.SetDefault("TROJAN_ADDRS", "")
 	v.SetDefault("V2FLY_ADDRS", "")
 
+	// Metrics defaults
+	v.SetDefault("METRICS_ENABLED", true)
+	v.SetDefault("METRICS_PORT", "9090")
+
+	// Tracing defaults
+	v.SetDefault("TRACING_ENABLED", false)
+	v.SetDefault("TRACING_SERVICE_NAME", "mu-service")
+	v.SetDefault("TRACING_ENDPOINT", "localhost:4317")
+	v.SetDefault("TRACING_INSECURE", true)
+	v.SetDefault("TRACING_SAMPLE_RATE", 1.0)
+
 	// Set environment variables prefix
 	v.SetEnvPrefix("MU")
 
@@ -43,9 +62,18 @@ func ConfigFromEnv() *Config {
 
 	// Create a config struct with values from environment variables
 	config := &Config{
-		MuApiBaseURL: v.GetString("API_BASE_URL"),
-		MuApiToken:   v.GetString("API_TOKEN"),
-		MuNodeID:     v.GetString("NODE_ID"),
+		MuApiBaseURL:   v.GetString("API_BASE_URL"),
+		MuApiToken:     v.GetString("API_TOKEN"),
+		MuNodeID:       v.GetString("NODE_ID"),
+		MetricsEnabled: v.GetBool("METRICS_ENABLED"),
+		MetricsPort:    v.GetString("METRICS_PORT"),
+		Tracing: tracing.Config{
+			Enabled:     v.GetBool("TRACING_ENABLED"),
+			ServiceName: v.GetString("TRACING_SERVICE_NAME"),
+			Endpoint:    v.GetString("TRACING_ENDPOINT"),
+			Insecure:    v.GetBool("TRACING_INSECURE"),
+			SampleRate:  v.GetFloat64("TRACING_SAMPLE_RATE"),
+		},
 	}
 
 	// Handle comma-separated string lists
