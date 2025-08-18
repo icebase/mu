@@ -85,6 +85,9 @@ func (m *Manager) RemoveUser(ctx context.Context, u User) error {
 		}),
 	})
 	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return nil
+		}
 		logger.Error("failed to call remove user : ", "error", err)
 		return TODOErr
 	}

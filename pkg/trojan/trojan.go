@@ -66,7 +66,7 @@ func (t *Manager) GetUser(ctx context.Context, password string) (*service.GetUse
 	})
 
 	if err != nil {
-		logger.Error("[trojan] get user fail ",
+		logger.Error("get user fail ",
 			"error", err,
 		)
 		return nil, err
@@ -74,7 +74,7 @@ func (t *Manager) GetUser(ctx context.Context, password string) (*service.GetUse
 
 	resp, err := stream.Recv()
 	if err != nil {
-		logger.Error("[trojan] get user fail ",
+		logger.Error("get user fail ",
 			"error", err,
 		)
 		return nil, err
@@ -104,7 +104,7 @@ func (t *Manager) RemoveUser(ctx context.Context, password, hash string) error {
 	})
 
 	if err != nil {
-		logger.Error("[trojan] remove user fail ",
+		logger.Error("remove user fail ",
 			"error", err,
 		)
 		return err
@@ -112,12 +112,12 @@ func (t *Manager) RemoveUser(ctx context.Context, password, hash string) error {
 
 	resp, err := stream.Recv()
 	if err != nil {
-		logger.Error("[trojan] remove user fail ",
+		logger.Error("remove user fail ",
 			"error", err,
 		)
 		return err
 	}
-	logger.Info("[trojan] remove user success ",
+	logger.Info("remove user success ",
 		"resp", resp,
 	)
 	return nil
@@ -144,7 +144,7 @@ func (t *Manager) AddUser(ctx context.Context, password string) error {
 	})
 
 	if err != nil {
-		logger.Error("[trojan] add user fail ",
+		logger.Error("add user fail ",
 			"error", err,
 		)
 		return err
@@ -152,12 +152,12 @@ func (t *Manager) AddUser(ctx context.Context, password string) error {
 
 	resp, err := stream.Recv()
 	if err != nil {
-		logger.Error("[trojan] add user fail ",
+		logger.Error("add user fail ",
 			"error", err,
 		)
 		return err
 	}
-	logger.Info("[trojan] add user success ",
+	logger.Info("add user success ",
 		"resp", resp,
 	)
 	return nil
