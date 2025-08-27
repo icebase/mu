@@ -94,10 +94,6 @@ func (a *App) initMetrics() error {
 		return nil
 	}
 
-	// 注册 runtime metrics
-	prometheus.MustRegister(prometheus.NewBuildInfoCollector())
-	prometheus.MustRegister(prometheus.NewGoCollector())
-
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
 
