@@ -44,7 +44,7 @@ func (v *v2flySync) Sync(ctx context.Context, users []*pb.User) error {
 
 	// 创建映射方便查找
 	apiUsersMap := make(map[string]*pb.User)
-	v2UsersMap := make(map[string]v2fly.User)
+	v2UsersMap := make(map[string]v2fly.UserData)
 
 	for _, user := range users {
 		if user.V2RayUser != nil && user.V2RayUser.Uuid != "" {
@@ -53,7 +53,7 @@ func (v *v2flySync) Sync(ctx context.Context, users []*pb.User) error {
 	}
 
 	for _, user := range v2Users {
-		v2UsersMap[user.User.GetUUID()] = user.User
+		v2UsersMap[user.User.GetUUID()] = user
 	}
 
 	// 检查要删除的用户
@@ -99,8 +99,18 @@ func (v *v2flySync) Sync(ctx context.Context, users []*pb.User) error {
 
 		uuid := apiUser.V2RayUser.Uuid
 		email := apiUser.V2RayUser.Email
-		_, ok := v2UsersMap[uuid]
+		v2user, ok := v2UsersMap[uuid]
+		var shouldAdd = false
 		if !ok {
+			shouldAdd = true
+		} else {
+			if v2user.TrafficInfo.Down == 0 && v2user.TrafficInfo.Up == 0 {
+				logger.Info("user not traffice, should re add")
+				shouldAdd = true
+			}
+		}
+
+		if shouldAdd {
 			// 用户不在 v2fly 服务器上，需要添加
 			logger.Info("adding new user", "uuid", uuid)
 
