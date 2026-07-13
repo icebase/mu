@@ -8,8 +8,8 @@ import (
 )
 
 type Config struct {
-	MuApiBaseURL string
-	MuApiToken   string
+	MuAPIBaseURL string
+	MuAPIToken   string
 	MuNodeID     string
 
 	TrojanAddrs []string
@@ -62,8 +62,8 @@ func ConfigFromEnv() *Config {
 
 	// Create a config struct with values from environment variables
 	config := &Config{
-		MuApiBaseURL:   v.GetString("API_BASE_URL"),
-		MuApiToken:     v.GetString("API_TOKEN"),
+		MuAPIBaseURL:   v.GetString("API_BASE_URL"),
+		MuAPIToken:     v.GetString("API_TOKEN"),
 		MuNodeID:       v.GetString("NODE_ID"),
 		MetricsEnabled: v.GetBool("METRICS_ENABLED"),
 		MetricsPort:    v.GetString("METRICS_PORT"),

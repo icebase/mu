@@ -58,7 +58,7 @@ func (a *App) Init() error {
 		return fmt.Errorf("failed to init metrics: %w", err)
 	}
 
-	a.muClient = mu.NewClient(a.config.MuApiBaseURL, a.config.MuApiToken, a.config.MuNodeID)
+	a.muClient = mu.NewClient(a.config.MuAPIBaseURL, a.config.MuAPIToken, a.config.MuNodeID)
 
 	for _, addr := range a.config.TrojanAddrs {
 		s, err := newTrojanSync(addr)

@@ -4,7 +4,20 @@ import (
 	"os"
 	"reflect"
 	"testing"
+
+	"github.com/icebase/mu/internal/mu/app/tracing"
 )
+
+// defaultTracing returns the Tracing config values set as defaults by ConfigFromEnv.
+func defaultTracing() tracing.Config {
+	return tracing.Config{
+		Enabled:     false,
+		ServiceName: "mu-service",
+		Endpoint:    "localhost:4317",
+		Insecure:    true,
+		SampleRate:  1.0,
+	}
+}
 
 func TestConfigFromEnv(t *testing.T) {
 	// Save original environment variables to restore later
@@ -42,11 +55,14 @@ func TestConfigFromEnv(t *testing.T) {
 				"MU_V2FLY_ADDRS":  "",
 			},
 			expected: &Config{
-				MuApiBaseURL: "",
-				MuApiToken:   "",
-				MuNodeID:     "",
-				TrojanAddrs:  nil,
-				V2flyAddrs:   nil,
+				MuAPIBaseURL:   "",
+				MuAPIToken:     "",
+				MuNodeID:       "",
+				TrojanAddrs:    nil,
+				V2flyAddrs:     nil,
+				MetricsEnabled: true,
+				MetricsPort:    "9090",
+				Tracing:        defaultTracing(),
 			},
 		},
 		{
@@ -59,11 +75,14 @@ func TestConfigFromEnv(t *testing.T) {
 				"MU_V2FLY_ADDRS":  "v2fly1.example.com,v2fly2.example.com",
 			},
 			expected: &Config{
-				MuApiBaseURL: "https://api.example.com",
-				MuApiToken:   "test-token",
-				MuNodeID:     "node-1",
-				TrojanAddrs:  []string{"trojan1.example.com", "trojan2.example.com"},
-				V2flyAddrs:   []string{"v2fly1.example.com", "v2fly2.example.com"},
+				MuAPIBaseURL:   "https://api.example.com",
+				MuAPIToken:     "test-token",
+				MuNodeID:       "node-1",
+				TrojanAddrs:    []string{"trojan1.example.com", "trojan2.example.com"},
+				V2flyAddrs:     []string{"v2fly1.example.com", "v2fly2.example.com"},
+				MetricsEnabled: true,
+				MetricsPort:    "9090",
+				Tracing:        defaultTracing(),
 			},
 		},
 		{
@@ -76,11 +95,14 @@ func TestConfigFromEnv(t *testing.T) {
 				"MU_V2FLY_ADDRS":  "v2fly.example.com",
 			},
 			expected: &Config{
-				MuApiBaseURL: "https://api.example.com",
-				MuApiToken:   "test-token",
-				MuNodeID:     "node-2",
-				TrojanAddrs:  nil,
-				V2flyAddrs:   []string{"v2fly.example.com"},
+				MuAPIBaseURL:   "https://api.example.com",
+				MuAPIToken:     "test-token",
+				MuNodeID:       "node-2",
+				TrojanAddrs:    nil,
+				V2flyAddrs:     []string{"v2fly.example.com"},
+				MetricsEnabled: true,
+				MetricsPort:    "9090",
+				Tracing:        defaultTracing(),
 			},
 		},
 	}

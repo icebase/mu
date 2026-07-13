@@ -170,14 +170,13 @@ func (v *v2flySync) GetTraffic(ctx context.Context, users []*pb.User) ([]*pb.Use
 	logger.Info("starting traffic collection", "users_count", len(users))
 
 	// 创建流量日志结果集
-	var trafficLogs []*pb.UserTrafficLog
+	trafficLogs := make([]*pb.UserTrafficLog, 0, len(users))
 	processedCount := 0
 
 	var u, d int64
 
 	// 处理每个用户的流量数据
 	for _, user := range users {
-
 		trafficInfo, err := v.manager.GetTrafficAndReset(ctx,
 			v2fly.NewUser(user.V2RayUser.Email, user.V2RayUser.Uuid, user.V2RayUser.AlterId, user.V2RayUser.Level))
 		if err != nil {

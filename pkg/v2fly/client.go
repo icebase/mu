@@ -89,7 +89,7 @@ func (m *Manager) RemoveUser(ctx context.Context, u User) error {
 			return nil
 		}
 		logger.Error("failed to call remove user : ", "error", err)
-		return TODOErr
+		return ErrTODO
 	}
 	logger.Debug("call remove user resp: ", "resp", resp)
 
@@ -147,7 +147,6 @@ func (m *Manager) GetUserList(ctx context.Context, reset bool) ([]UserData, erro
 	var users = make(map[string]UserData)
 
 	for _, v := range resp.Stat {
-
 		email := getEmailFromStatName(v.GetName())
 		uuid := getUUDIFromEmail(email)
 
@@ -173,7 +172,6 @@ func (m *Manager) GetUserList(ctx context.Context, reset bool) ([]UserData, erro
 			User:        u,
 			TrafficInfo: ti,
 		}
-
 	}
 
 	var data = make([]UserData, 0, len(users))

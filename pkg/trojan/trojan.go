@@ -82,7 +82,7 @@ func (t *Manager) GetUser(ctx context.Context, password string) (*service.GetUse
 	return resp, nil
 }
 
-func (t *Manager) RemoveUser(ctx context.Context, password, hash string) error {
+func (t *Manager) RemoveUser(ctx context.Context, password, _ string) error {
 	logger := slog.Default().With("method", "trojan.RemoveUser")
 	var err error
 

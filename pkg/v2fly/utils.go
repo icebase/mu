@@ -6,7 +6,7 @@ import (
 )
 
 var (
-	TODOErr = fmt.Errorf("TODO error ")
+	ErrTODO = fmt.Errorf("TODO error ")
 )
 
 func IsNotFoundError(e error) bool {
