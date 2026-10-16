@@ -2,220 +2,157 @@ package app
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
+	"maps"
+	"strings"
 
 	"github.com/icebase/mu/pkg/v2fly"
 	pb "github.com/icebase/mu/proto/v1"
 )
 
-var (
-	tag = "proxy"
-)
+const tag = "proxy"
 
 type v2flySync struct {
 	manager *v2fly.Manager
+	state   *syncState
+	key     string
 }
 
-func newV2flySync(addr string) (*v2flySync, error) {
+func newV2flySync(addr string, state *syncState) (*v2flySync, error) {
+	if state == nil {
+		return nil, errors.New("synchronization state is required")
+	}
 	manager, err := v2fly.NewManager(addr, tag)
 	if err != nil {
-		slog.Error("create v2fly manager failed", "addr", addr)
 		return nil, err
 	}
-	return &v2flySync{
-		manager: manager,
-	}, nil
+	return &v2flySync{manager: manager, state: state, key: "v2fly:" + addr + ":" + tag}, nil
 }
-
-func (v *v2flySync) Name() string {
-	return "v2fly"
+func (v *v2flySync) Name() string { return protocolV2Fly }
+func (v *v2flySync) Close() error { return v.manager.Close() }
+func (v *v2flySync) capture(users map[string]managedUser, snapshot []v2fly.UserData) ([]*pb.UserTrafficLog, error) {
+	samples := make(map[string]trafficSample, len(snapshot))
+	for _, entry := range snapshot {
+		info := entry.TrafficInfo
+		email := entry.User.GetEmail()
+		samples[email] = trafficSample{Up: info.Up, Down: info.Down, HasUp: info.HasUp, HasDown: info.HasDown, UserKey: strings.ToLower(email)}
+	}
+	return v.state.capture(v.key, pb.TrafficType_TRAFFIC_TYPE_V2FLY, users, samples)
 }
-
 func (v *v2flySync) Sync(ctx context.Context, users []*pb.User) error {
-	logger := slog.Default().With("method", "v2fly_sync")
-	logger.Info("starting user sync", "users_count", len(users))
-
-	// 获取 v2fly 服务器上的所有用户
-	v2Users, err := v.manager.GetUserList(ctx, false)
+	all, enabled, err := desiredUsers(users, v.Name())
 	if err != nil {
-		logger.Error("failed to get v2fly user list", "error", err)
 		return err
 	}
-
-	// 创建映射方便查找
-	apiUsersMap := make(map[string]*pb.User)
-	v2UsersMap := make(map[string]v2fly.UserData)
-
-	for _, user := range users {
-		if user.V2RayUser != nil && user.V2RayUser.Uuid != "" {
-			apiUsersMap[user.V2RayUser.Uuid] = user
+	var errs []error
+	snapshot, statsErr := v.manager.GetUserList(ctx, false)
+	if statsErr != nil {
+		// Authorization must not depend on the stats service. Non-reset counters can be collected later.
+		errs = append(errs, statsErr)
+	} else if _, err := v.capture(all, snapshot); err != nil {
+		return err
+	}
+	data := v.state.snapshot()
+	previous := backend(&data, v.key)
+	known := maps.Clone(previous.Users)
+	for id, user := range all {
+		if _, exists := known[id]; !exists {
+			known[id] = user
 		}
 	}
-
-	for _, user := range v2Users {
-		v2UsersMap[user.User.GetUUID()] = user
-	}
-
-	// 检查要删除的用户
-	for _, v2User := range v2Users {
-		uuid := v2User.User.GetUUID()
-		logger.Debug("checking v2fly user", "uuid", uuid)
-
-		apiUser, ok := apiUsersMap[uuid]
-		if !ok {
-			// 用户不在 API 返回的列表中，应该被删除
-			logger.Info("removing user not in API", "uuid", uuid)
-			err := v.manager.RemoveUser(ctx, v2User.User)
-			if err != nil {
-				logger.Error("failed to remove user", "uuid", uuid, "error", err)
-				// 继续处理其他用户，不中断
-			}
-			continue
-		}
-
-		// 如果用户被禁用，也应该被删除
-		if apiUser.Enable == 0 {
-			logger.Info("removing disabled user", "uuid", uuid)
-			err := v.manager.RemoveUser(ctx, v2User.User)
-			if err != nil {
-				logger.Error("failed to remove disabled user", "uuid", uuid, "error", err)
-				// 继续处理其他用户，不中断
-			}
+	untracked := 0
+	for _, entry := range snapshot {
+		email := entry.User.GetEmail()
+		id := strings.ToLower(email)
+		if _, exists := known[id]; !exists {
+			known[id] = managedUser{Email: email}
+			untracked++
 		}
 	}
-
-	// 添加或更新用户
-	for _, apiUser := range users {
-		// 跳过被禁用的用户
-		if apiUser.Enable == 0 {
+	if untracked > 0 {
+		slog.Warn("untracked V2Ray statistics identities discovered; historical billing identity is unavailable", "count", untracked)
+	}
+	observed := make(map[string]v2fly.TrafficInfo, len(snapshot))
+	for _, entry := range snapshot {
+		observed[entry.User.GetEmail()] = entry.TrafficInfo
+	}
+	cursors := make(map[string]trafficCursor)
+	if statsErr == nil {
+		for _, user := range enabled {
+			cursor := previous.Cursors[user.Email]
+			sample := observed[user.Email]
+			// A complete snapshot proves absent directions have no surviving counter (e.g. after restart).
+			if !sample.HasUp {
+				cursor.Up = 0
+				cursor.HasUp = true
+			}
+			if !sample.HasDown {
+				cursor.Down = 0
+				cursor.HasDown = true
+			}
+			cursors[user.Email] = cursor
+		}
+	}
+	if err := v.state.prepareCursors(v.key, all, cursors); err != nil {
+		return err
+	}
+	removed := make([]string, 0, len(known))
+	for id, user := range known {
+		if _, keep := enabled[id]; keep {
 			continue
 		}
-
-		// 确保用户有 V2Ray 信息
-		if apiUser.V2RayUser == nil || apiUser.V2RayUser.Uuid == "" {
-			logger.Warn("user missing v2ray info", "user_id", apiUser.Id)
+		if err := v.manager.RemoveUser(ctx, user.v2User()); err != nil {
+			errs = append(errs, err)
 			continue
 		}
-
-		uuid := apiUser.V2RayUser.Uuid
-		email := apiUser.V2RayUser.Email
-		v2user, ok := v2UsersMap[uuid]
-		var shouldAdd = false
-		if !ok {
-			shouldAdd = true
-		} else {
-			if v2user.TrafficInfo.Down == 0 && v2user.TrafficInfo.Up == 0 {
-				logger.Info("user not traffice, should re add")
-				shouldAdd = true
-			}
-		}
-
-		if shouldAdd {
-			// 用户不在 v2fly 服务器上，需要添加
-			logger.Info("adding new user", "uuid", uuid)
-
-			// 创建用户对象
-			v2User := &v2flyUser{
-				uuid:    uuid,
-				email:   email,
-				level:   apiUser.V2RayUser.Level,
-				alterID: apiUser.V2RayUser.AlterId,
-			}
-
-			// 添加用户到 v2fly 服务器
-			exist, err := v.manager.AddUser(ctx, v2User)
-			if err != nil {
-				logger.Error("failed to add user", "uuid", uuid, "error", err)
+		removed = append(removed, id)
+	}
+	applied := make(map[string]managedUser)
+	for id, user := range enabled {
+		old, exists := previous.Applied[id]
+		// Add is not an update. Replace unknown/changed configurations once; persist the applied identity.
+		if !exists || !sameV2Account(old, user) {
+			if err := v.manager.RemoveUser(ctx, user.v2User()); err != nil {
+				errs = append(errs, err)
 				continue
 			}
-
-			if exist {
-				logger.Debug("user already exists", "uuid", uuid)
-			} else {
-				logger.Info("user added successfully", "uuid", uuid)
-			}
+			removed = append(removed, id)
 		}
+		// Idempotent Add also restores users after a backend restart, regardless of traffic-counter existence.
+		if _, err := v.manager.AddUser(ctx, user.v2User()); err != nil {
+			errs = append(errs, fmt.Errorf("add V2Ray user ID %d: %w", user.ID, err))
+			continue
+		}
+		applied[id] = user
 	}
-
-	logger.Info("user sync completed")
-	return nil
+	if err := v.state.complete(v.key, applied, removed); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
 }
-
-// V2Ray 用户接口实现
-type v2flyUser struct {
-	uuid    string
-	email   string
-	level   uint32
-	alterID uint32
+func sameV2Account(a, b managedUser) bool {
+	return a.UUID == b.UUID && a.Email == b.Email && a.Level == b.Level && a.AlterID == b.AlterID
 }
-
-func (u *v2flyUser) GetUUID() string {
-	return u.uuid
-}
-
-func (u *v2flyUser) GetEmail() string {
-	return u.email
-}
-
-func (u *v2flyUser) GetLevel() uint32 {
-	return u.level
-}
-
-func (u *v2flyUser) GetAlterID() uint32 {
-	return u.alterID
-}
-
 func (v *v2flySync) GetTraffic(ctx context.Context, users []*pb.User) ([]*pb.UserTrafficLog, error) {
-	logger := slog.Default().With("method", "v2fly_get_traffic")
-	logger.Info("starting traffic collection", "users_count", len(users))
-
-	// 创建流量日志结果集
-	trafficLogs := make([]*pb.UserTrafficLog, 0, len(users))
-	processedCount := 0
-
-	var u, d int64
-
-	// 处理每个用户的流量数据
-	for _, user := range users {
-		trafficInfo, err := v.manager.GetTrafficAndReset(ctx,
-			v2fly.NewUser(user.V2RayUser.Email, user.V2RayUser.Uuid, user.V2RayUser.AlterId, user.V2RayUser.Level))
-		if err != nil {
-			logger.Error("failed to get traffic",
-				"uuid", user.V2RayUser.Uuid,
-				"error", err)
-			continue
-		}
-
-		if trafficInfo.Up == 0 && trafficInfo.Down == 0 {
-			logger.Info("skipping user with no traffic",
-				"email", user.V2RayUser.Email,
-				"uuid", user.V2RayUser.Uuid)
-			continue
-		}
-
-		// 创建流量日志
-		trafficLog := &pb.UserTrafficLog{
-			UserId: user.Id,
-			Uuid:   user.V2RayUser.Uuid,
-			U:      trafficInfo.Up,
-			D:      trafficInfo.Down,
-		}
-
-		u += trafficInfo.Up
-		d += trafficInfo.Down
-
-		// 添加到结果集
-		trafficLogs = append(trafficLogs, trafficLog)
-		processedCount++
-
-		logger.Info("processed traffic data",
-			"uuid", user.V2RayUser.Uuid,
-			"user_id", user.Id,
-			"upload", trafficInfo.Up,
-			"download", trafficInfo.Down)
+	all, _, err := desiredUsers(users, v.Name())
+	if err != nil {
+		return nil, err
 	}
-
-	logger.Info("completed traffic collection",
-		"processed_count", processedCount, "logs_count", len(trafficLogs), "upload", u, "download", d)
-	return trafficLogs, nil
+	snapshot, err := v.manager.GetUserList(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	return v.capture(all, snapshot)
 }
+
+type v2flyUser struct {
+	uuid, email    string
+	level, alterID uint32
+}
+
+func (u *v2flyUser) GetUUID() string    { return u.uuid }
+func (u *v2flyUser) GetEmail() string   { return u.email }
+func (u *v2flyUser) GetLevel() uint32   { return u.level }
+func (u *v2flyUser) GetAlterID() uint32 { return u.alterID }

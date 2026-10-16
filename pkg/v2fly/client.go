@@ -2,9 +2,12 @@ package v2fly
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log/slog"
+	"maps"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/v2fly/v2ray-core/v5/app/proxyman/command"
 	statscmd "github.com/v2fly/v2ray-core/v5/app/stats/command"
@@ -13,119 +16,108 @@ import (
 	"github.com/v2fly/v2ray-core/v5/proxy/vmess"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
 
-type Manager struct {
-	client      command.HandlerServiceClient
-	statsClient statscmd.StatsServiceClient
-
-	inBoundTag string
-}
-
+const requestTimeout = 5 * time.Second
+const uplinkDirection = "uplink"
+const downlinkDirection = "downlink"
 const (
 	UplinkFormat   = "user>>>%s>>>traffic>>>uplink"
 	DownlinkFormat = "user>>>%s>>>traffic>>>downlink"
 )
 
+type Manager struct {
+	conn        *grpc.ClientConn
+	client      command.HandlerServiceClient
+	statsClient statscmd.StatsServiceClient
+	inBoundTag  string
+}
 type TrafficInfo struct {
-	Up, Down int64
+	Up, Down       int64
+	HasUp, HasDown bool
 }
 
 func NewManager(addr, tag string) (*Manager, error) {
-	slog.Info("create new mgr", "addr", addr)
-	cc, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		slog.Error("grpc dail failed", "addr", addr)
-		return nil, err
+		return nil, errors.New("invalid V2Ray API address")
 	}
-	client := command.NewHandlerServiceClient(cc)
-	statsClient := statscmd.NewStatsServiceClient(cc)
-	m := &Manager{
-		client:      client,
-		statsClient: statsClient,
-		inBoundTag:  tag,
-	}
-
-	return m, nil
+	return &Manager{conn: conn, client: command.NewHandlerServiceClient(conn), statsClient: statscmd.NewStatsServiceClient(conn), inBoundTag: tag}, nil
 }
-
-// return is exist,and error
+func (m *Manager) Close() error { return m.conn.Close() }
 func (m *Manager) AddUser(ctx context.Context, u User) (bool, error) {
-	logger := slog.Default()
-	resp, err := m.client.AlterInbound(ctx, &command.AlterInboundRequest{
+	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
+	_, err := m.client.AlterInbound(ctx, &command.AlterInboundRequest{
 		Tag: m.inBoundTag,
-		Operation: serial.ToTypedMessage(&command.AddUserOperation{
-			User: &protocol.User{
-				Level: u.GetLevel(),
-				Email: u.GetEmail(),
-				Account: serial.ToTypedMessage(&vmess.Account{
-					Id:               u.GetUUID(),
-					AlterId:          u.GetAlterID(),
-					SecuritySettings: &protocol.SecurityConfig{Type: protocol.SecurityType_AUTO},
-				}),
-			},
-		}),
+		Operation: serial.ToTypedMessage(&command.AddUserOperation{User: &protocol.User{
+			Level: u.GetLevel(), Email: u.GetEmail(),
+			Account: serial.ToTypedMessage(&vmess.Account{
+				Id: u.GetUUID(), AlterId: u.GetAlterID(),
+				SecuritySettings: &protocol.SecurityConfig{Type: protocol.SecurityType_AUTO},
+			}),
+		}}),
 	})
-	if err != nil && !IsAlreadyExistsError(err) {
-		logger.Error("failed to call add user",
-			"resp", resp,
-			"error", err,
-		)
-		return false, err
+	if IsAlreadyExistsError(err) {
+		return true, nil
 	}
-	return IsAlreadyExistsError(err), nil
-}
-
-func (m *Manager) RemoveUser(ctx context.Context, u User) error {
-	logger := slog.Default()
-	resp, err := m.client.AlterInbound(ctx, &command.AlterInboundRequest{
-		Tag: m.inBoundTag,
-		Operation: serial.ToTypedMessage(&command.RemoveUserOperation{
-			Email: u.GetEmail(),
-		}),
-	})
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			return nil
-		}
-		logger.Error("failed to call remove user : ", "error", err)
-		return ErrTODO
+		return false, rpcError("add V2Ray user", err)
 	}
-	logger.Debug("call remove user resp: ", "resp", resp)
-
-	return nil
+	return false, nil
+}
+func (m *Manager) RemoveUser(ctx context.Context, u User) error {
+	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
+	_, err := m.client.AlterInbound(ctx, &command.AlterInboundRequest{
+		Tag:       m.inBoundTag,
+		Operation: serial.ToTypedMessage(&command.RemoveUserOperation{Email: u.GetEmail()}),
+	})
+	if err == nil {
+		return nil
+	}
+	// Do not mistake a missing inbound handler for an already-removed user.
+	message := status.Convert(err).Message()
+	if strings.Contains(message, "User ") && strings.HasSuffix(message, " not found.") {
+		return nil
+	}
+	return rpcError("remove V2Ray user", err)
 }
 
+// GetTraffic reads cumulative counters without resetting them. Persist deltas before advancing a cursor.
+func (m *Manager) GetTraffic(ctx context.Context, u User) (TrafficInfo, error) {
+	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
+	var traffic TrafficInfo
+	var errs []error
+	for _, direction := range []string{uplinkDirection, downlinkDirection} {
+		response, err := m.statsClient.GetStats(ctx, &statscmd.GetStatsRequest{Name: "user>>>" + u.GetEmail() + ">>>traffic>>>" + direction})
+		if IsNotFoundError(err) {
+			continue
+		}
+		if err != nil {
+			errs = append(errs, rpcError("read V2Ray "+direction, err))
+			continue
+		}
+		if response == nil || response.Stat == nil || response.Stat.Value < 0 {
+			errs = append(errs, errors.New("invalid V2Ray traffic counter"))
+			continue
+		}
+		if direction == uplinkDirection {
+			traffic.Up = response.Stat.Value
+			traffic.HasUp = true
+		} else {
+			traffic.Down = response.Stat.Value
+			traffic.HasDown = true
+		}
+	}
+	return traffic, errors.Join(errs...)
+}
+
+// GetTrafficAndReset is retained for source compatibility. Deprecated: counters are no longer reset.
 func (m *Manager) GetTrafficAndReset(ctx context.Context, u User) (TrafficInfo, error) {
-	logger := slog.Default()
-	ti := TrafficInfo{}
-	up, err := m.statsClient.GetStats(ctx, &statscmd.GetStatsRequest{
-		Name:   fmt.Sprintf(UplinkFormat, u.GetEmail()),
-		Reset_: true,
-	})
-	if err != nil && !IsNotFoundError(err) {
-		logger.Error("get traffic user ", "u", u, "error", err)
-		return ti, err
-	}
-
-	down, err := m.statsClient.GetStats(ctx, &statscmd.GetStatsRequest{
-		Name:   fmt.Sprintf(DownlinkFormat, u.GetEmail()),
-		Reset_: true,
-	})
-	if err != nil && !IsNotFoundError(err) {
-		logger.Error("get traffic user fail",
-			"user", u,
-			"error", err)
-		return ti, nil
-	}
-
-	if up != nil {
-		ti.Up = up.Stat.Value
-	}
-	if down != nil {
-		ti.Down = down.Stat.Value
-	}
-	return ti, nil
+	return m.GetTraffic(ctx, u)
 }
 
 type UserData struct {
@@ -133,67 +125,46 @@ type UserData struct {
 	TrafficInfo TrafficInfo
 }
 
+// GetUserList returns traffic identities, NOT an authorization roster. UUIDs cannot be inferred from emails.
 func (m *Manager) GetUserList(ctx context.Context, reset bool) ([]UserData, error) {
-	logger := slog.Default().With("method", "v2fly_get_user_list")
-	resp, err := m.statsClient.QueryStats(ctx, &statscmd.QueryStatsRequest{
-		Reset_: reset,
-	})
+	if reset {
+		return nil, errors.New("destructive V2Ray counter resets are not supported")
+	}
+	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
+	response, err := m.statsClient.QueryStats(ctx, &statscmd.QueryStatsRequest{Pattern: "user>>>"})
 	if err != nil {
-		logger.Error("failed to call query stats", "error", err)
-		return nil, err
+		return nil, rpcError("query V2Ray traffic", err)
 	}
-	logger.Info("query stats resp", "resp.stat.len", len(resp.Stat))
-
-	var users = make(map[string]UserData)
-
-	for _, v := range resp.Stat {
-		email := getEmailFromStatName(v.GetName())
-		uuid := getUUDIFromEmail(email)
-
-		if _, ok := users[uuid]; !ok {
-			users[uuid] = UserData{
-				TrafficInfo: TrafficInfo{},
-			}
+	if response == nil {
+		return nil, errors.New("invalid V2Ray statistics response")
+	}
+	users := make(map[string]UserData)
+	for _, counter := range response.Stat {
+		if counter == nil {
+			continue
 		}
-
-		u := user{
-			email: email,
-			uuid:  uuid,
+		parts := strings.Split(counter.Name, ">>>")
+		if len(parts) != 4 || parts[0] != "user" || parts[1] == "" || parts[2] != "traffic" || (parts[3] != uplinkDirection && parts[3] != downlinkDirection) {
+			continue
 		}
-		ti := users[uuid].TrafficInfo
-
-		if strings.Contains(v.GetName(), "downlink") {
-			ti.Down = v.Value
+		if counter.Value < 0 {
+			return nil, errors.New("negative V2Ray traffic counter")
+		}
+		email := parts[1]
+		entry := users[email]
+		entry.User = NewUser(email, "", 0, 0)
+		if parts[3] == uplinkDirection {
+			entry.TrafficInfo.Up = counter.Value
+			entry.TrafficInfo.HasUp = true
 		} else {
-			ti.Up = v.Value
+			entry.TrafficInfo.Down = counter.Value
+			entry.TrafficInfo.HasDown = true
 		}
-
-		users[uuid] = UserData{
-			User:        u,
-			TrafficInfo: ti,
-		}
+		users[email] = entry
 	}
-
-	var data = make([]UserData, 0, len(users))
-	for _, v := range users {
-		data = append(data, v)
-	}
-
-	return data, nil
+	return slices.Collect(maps.Values(users)), nil
 }
-
-func getEmailFromStatName(s string) string {
-	arr := strings.Split(s, ">>>")
-	if len(arr) > 1 {
-		return arr[1]
-	}
-	return s
-}
-
-func getUUDIFromEmail(s string) string {
-	arr := strings.Split(s, "@")
-	if len(arr) > 0 {
-		return arr[0]
-	}
-	return s
+func rpcError(operation string, err error) error {
+	return fmt.Errorf("%s: %s", operation, status.Code(err))
 }

@@ -1,24 +1,15 @@
 package v2fly
 
 import (
-	"fmt"
 	"strings"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
-var (
-	ErrTODO = fmt.Errorf("TODO error ")
-)
-
-func IsNotFoundError(e error) bool {
-	if e == nil {
-		return false
-	}
-	return strings.Contains(e.Error(), "not found")
+func IsNotFoundError(err error) bool {
+	return err != nil && (status.Code(err) == codes.NotFound || strings.HasSuffix(status.Convert(err).Message(), " not found."))
 }
-
-func IsAlreadyExistsError(e error) bool {
-	if e == nil {
-		return false
-	}
-	return strings.Contains(e.Error(), "already exists")
+func IsAlreadyExistsError(err error) bool {
+	return err != nil && (status.Code(err) == codes.AlreadyExists || strings.HasSuffix(status.Convert(err).Message(), " already exists."))
 }

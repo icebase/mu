@@ -5,6 +5,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+const (
+	labelStatus   = "status"
+	labelSyncType = "sync_type"
+)
+
 var (
 	// 操作计数器
 	PingCounter = promauto.NewCounterVec(
@@ -12,7 +17,7 @@ var (
 			Name: "mu_ping_total",
 			Help: "Total number of ping operations",
 		},
-		[]string{"status"}, // success, failure
+		[]string{labelStatus}, // success, failure
 	)
 
 	UserSyncCounter = promauto.NewCounterVec(
@@ -20,7 +25,7 @@ var (
 			Name: "mu_user_sync_total",
 			Help: "Total number of user sync operations",
 		},
-		[]string{"status", "sync_type"}, // status: success/failure, sync_type: trojan/v2fly
+		[]string{labelStatus, labelSyncType}, // status: success/failure, sync_type: trojan/v2fly
 	)
 
 	TrafficSyncCounter = promauto.NewCounterVec(
@@ -28,7 +33,7 @@ var (
 			Name: "mu_traffic_sync_total",
 			Help: "Total number of traffic sync operations",
 		},
-		[]string{"status"},
+		[]string{labelStatus},
 	)
 
 	// 操作延迟直方图
@@ -46,7 +51,7 @@ var (
 			Help:    "Duration of user sync operations in seconds",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"sync_type"},
+		[]string{labelSyncType},
 	)
 
 	TrafficSyncDuration = promauto.NewHistogram(
@@ -63,7 +68,7 @@ var (
 			Name: "mu_traffic_logs_collected",
 			Help: "Number of traffic logs collected in last sync",
 		},
-		[]string{"sync_type"},
+		[]string{labelSyncType},
 	)
 
 	TrafficLogsUploaded = promauto.NewGauge(
@@ -97,7 +102,7 @@ var (
 			Name: "mu_total_upload_bytes",
 			Help: "Total upload bytes reported",
 		},
-		[]string{"sync_type"},
+		[]string{labelSyncType},
 	)
 
 	TotalDownloadBytes = promauto.NewCounterVec(
@@ -105,6 +110,6 @@ var (
 			Name: "mu_total_download_bytes",
 			Help: "Total download bytes reported",
 		},
-		[]string{"sync_type"},
+		[]string{labelSyncType},
 	)
 )
