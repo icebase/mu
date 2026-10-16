@@ -2,163 +2,119 @@ package trojan
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
-	"log/slog"
 	"time"
 
 	"github.com/p4gefau1t/trojan-go/api/service"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
 
+const requestTimeout = 5 * time.Second
+
+var ErrUserNotFound = errors.New("trojan user not found")
+
 type Manager struct {
-	client        service.TrojanServerServiceClient
-	userStatusMap map[int64]*service.UserStatus
+	conn   *grpc.ClientConn
+	client service.TrojanServerServiceClient
 }
 
 func NewManager(addr string) (*Manager, error) {
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return nil, err
+		return nil, errors.New("invalid Trojan API address")
 	}
-	client := service.NewTrojanServerServiceClient(conn)
-	return &Manager{
-		client:        client,
-		userStatusMap: make(map[int64]*service.UserStatus),
-	}, nil
+	return &Manager{conn: conn, client: service.NewTrojanServerServiceClient(conn)}, nil
 }
 
+func (t *Manager) Close() error { return t.conn.Close() }
+
+// ListUsers returns a complete snapshot. Trojan-Go exposes hashes, never passwords.
 func (t *Manager) ListUsers(ctx context.Context) ([]*service.UserStatus, error) {
+	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
 	stream, err := t.client.ListUsers(ctx, &service.ListUsersRequest{})
 	if err != nil {
-		return nil, err
+		return nil, rpcError("list Trojan users", err)
 	}
-	var out = make([]*service.UserStatus, 0)
+	var out []*service.UserStatus
 	for {
 		reply, err := stream.Recv()
-		if err == io.EOF {
-			break
+		if errors.Is(err, io.EOF) {
+			return out, nil
 		}
 		if err != nil {
-			return out, nil
+			return nil, rpcError("receive Trojan users", err)
+		}
+		if reply.Status == nil || reply.Status.User == nil || reply.Status.User.Hash == "" || reply.Status.TrafficTotal == nil {
+			return nil, errors.New("invalid Trojan user snapshot")
 		}
 		out = append(out, reply.Status)
 	}
-	return out, nil
 }
 
 func (t *Manager) GetUser(ctx context.Context, password string) (*service.GetUsersResponse, error) {
-	logger := slog.Default().With("method", "trojan.GetUser")
-	var err error
-
-	ctx, cancel := context.WithTimeout(ctx, time.Second*10)
+	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
-
 	stream, err := t.client.GetUsers(ctx)
 	if err != nil {
-		return nil, err
+		return nil, rpcError("get Trojan user", err)
 	}
-
-	err = stream.Send(&service.GetUsersRequest{
-		User: &service.User{
-			Password: password,
-		},
-	})
-
-	if err != nil {
-		logger.Error("get user fail ",
-			"error", err,
-		)
-		return nil, err
+	if err := stream.Send(&service.GetUsersRequest{User: &service.User{Password: password}}); err != nil {
+		return nil, rpcError("send Trojan user lookup", err)
 	}
-
+	if err := stream.CloseSend(); err != nil {
+		return nil, rpcError("close Trojan user lookup", err)
+	}
 	resp, err := stream.Recv()
 	if err != nil {
-		logger.Error("get user fail ",
-			"error", err,
-		)
-		return nil, err
+		return nil, rpcError("receive Trojan user", err)
+	}
+	if !resp.Success {
+		return nil, ErrUserNotFound
+	}
+	if resp.Status == nil || resp.Status.TrafficTotal == nil {
+		return nil, errors.New("invalid Trojan traffic response")
 	}
 	return resp, nil
 }
 
-func (t *Manager) RemoveUser(ctx context.Context, password, _ string) error {
-	logger := slog.Default().With("method", "trojan.RemoveUser")
-	var err error
-
-	ctx, cancel := context.WithTimeout(ctx, time.Second*10)
+// RemoveUser accepts either a cleartext password or a hash. Prefer the hash returned by ListUsers.
+func (t *Manager) RemoveUser(ctx context.Context, password, hash string) error {
+	return t.setUser(ctx, service.SetUsersRequest_Delete, &service.User{Password: password, Hash: hash})
+}
+func (t *Manager) AddUser(ctx context.Context, password string) error {
+	return t.setUser(ctx, service.SetUsersRequest_Add, &service.User{Password: password})
+}
+func (t *Manager) setUser(ctx context.Context, operation service.SetUsersRequest_Operation, user *service.User) error {
+	if user.Password == "" && user.Hash == "" {
+		return errors.New("trojan user identity is empty")
+	}
+	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
-
 	stream, err := t.client.SetUsers(ctx)
 	if err != nil {
-		return err
+		return rpcError("set Trojan user", err)
 	}
-
-	err = stream.Send(&service.SetUsersRequest{
-		Operation: service.SetUsersRequest_Delete,
-		Status: &service.UserStatus{
-			User: &service.User{
-				Password: password,
-			},
-		},
-	})
-
-	if err != nil {
-		logger.Error("remove user fail ",
-			"error", err,
-		)
-		return err
+	if err := stream.Send(&service.SetUsersRequest{Operation: operation, Status: &service.UserStatus{User: user}}); err != nil {
+		return rpcError("send Trojan user change", err)
 	}
-
+	if err := stream.CloseSend(); err != nil {
+		return rpcError("close Trojan user change", err)
+	}
 	resp, err := stream.Recv()
 	if err != nil {
-		logger.Error("remove user fail ",
-			"error", err,
-		)
-		return err
+		return rpcError("receive Trojan user change", err)
 	}
-	logger.Info("remove user success ",
-		"resp", resp,
-	)
+	// Info may contain passwords or authentication hashes; never return or log it.
+	if !resp.Success {
+		return errors.New("trojan API rejected user change")
+	}
 	return nil
 }
-
-func (t *Manager) AddUser(ctx context.Context, password string) error {
-	logger := slog.Default().With("method", "trojan.AddUser")
-	var err error
-	ctx, cancel := context.WithTimeout(ctx, time.Second*10)
-	defer cancel()
-
-	stream, err := t.client.SetUsers(ctx)
-	if err != nil {
-		return err
-	}
-
-	err = stream.Send(&service.SetUsersRequest{
-		Operation: service.SetUsersRequest_Add,
-		Status: &service.UserStatus{
-			User: &service.User{
-				Password: password,
-			},
-		},
-	})
-
-	if err != nil {
-		logger.Error("add user fail ",
-			"error", err,
-		)
-		return err
-	}
-
-	resp, err := stream.Recv()
-	if err != nil {
-		logger.Error("add user fail ",
-			"error", err,
-		)
-		return err
-	}
-	logger.Info("add user success ",
-		"resp", resp,
-	)
-	return nil
+func rpcError(operation string, err error) error {
+	return fmt.Errorf("%s: %s", operation, status.Code(err))
 }

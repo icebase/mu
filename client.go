@@ -2,6 +2,8 @@ package mu
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -24,7 +26,7 @@ type Client struct {
 }
 
 func NewClient(addr string, token string, nodeID string) *Client {
-	client := pb.NewMUServiceJSONClient(addr, http.DefaultClient, twirp.WithClientPathPrefix(""))
+	client := pb.NewMUServiceJSONClient(addr, &http.Client{Timeout: 10 * time.Second}, twirp.WithClientPathPrefix(""))
 	return &Client{client: client, addr: addr, token: token, nodeID: nodeID}
 }
 
@@ -40,15 +42,38 @@ func (c *Client) newContext(ctx context.Context) context.Context {
 
 func (c *Client) GetUsers(ctx context.Context, req *pb.GetUsersRequest) (*pb.GetUsersResponse, error) {
 	req.NodeId = c.nodeID
-	return c.client.GetUsers(c.newContext(ctx), req)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	response, err := c.client.GetUsers(c.newContext(ctx), req)
+	return response, apiError("get MU users", err)
 }
 
 func (c *Client) UploadTrafficLog(ctx context.Context, req *pb.UploadTrafficLogRequest) (*pb.UploadTrafficLogResponse, error) {
 	req.NodeId = c.nodeID
-	req.UploadAt = time.Now().Unix()
-	return c.client.UploadTrafficLog(c.newContext(ctx), req)
+	if req.UploadAt == 0 {
+		req.UploadAt = time.Now().Unix()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	response, err := c.client.UploadTrafficLog(c.newContext(ctx), req)
+	return response, apiError("upload MU traffic", err)
 }
 
 func (c *Client) Ping(ctx context.Context, req *pb.PingRequest) (*pb.PingResponse, error) {
-	return c.client.Ping(c.newContext(ctx), req)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	response, err := c.client.Ping(c.newContext(ctx), req)
+	return response, apiError("ping MU", err)
+}
+
+// Remote messages can contain authentication material. Expose only the error category.
+func apiError(operation string, err error) error {
+	if err == nil {
+		return nil
+	}
+	var remote twirp.Error
+	if errors.As(err, &remote) {
+		return fmt.Errorf("%s: %s", operation, remote.Code())
+	}
+	return fmt.Errorf("%s: transport failure", operation)
 }

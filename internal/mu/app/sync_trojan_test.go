@@ -11,6 +11,7 @@ import (
 
 	pb "github.com/icebase/mu/proto/v1"
 	"github.com/p4gefau1t/trojan-go/api/service"
+	"github.com/p4gefau1t/trojan-go/common"
 	"google.golang.org/grpc"
 )
 
@@ -90,10 +91,11 @@ func TestTrojanSyncReconcilesUsers(t *testing.T) {
 				_ = server.Serve(listener)
 			}()
 
-			syncer, err := newTrojanSync(listener.Addr().String())
+			syncer, err := newTrojanSync(listener.Addr().String(), newMemoryState())
 			if err != nil {
 				t.Fatal(err)
 			}
+			t.Cleanup(func() { _ = syncer.Close() })
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
@@ -135,7 +137,7 @@ func (s *trojanTestServer) ListUsers(_ *service.ListUsersRequest, stream service
 	s.mu.Unlock()
 	for _, password := range passwords {
 		if err := stream.Send(&service.ListUsersResponse{
-			Status: &service.UserStatus{User: &service.User{Password: password}},
+			Status: &service.UserStatus{User: &service.User{Hash: common.SHA224String(password)}, TrafficTotal: &service.Traffic{}},
 		}); err != nil {
 			return err
 		}
@@ -155,7 +157,11 @@ func (s *trojanTestServer) SetUsers(stream service.TrojanServerService_SetUsersS
 		s.users[password] = true
 		s.adds++
 	case service.SetUsersRequest_Delete:
-		delete(s.users, password)
+		for candidate := range s.users {
+			if common.SHA224String(candidate) == request.Status.User.Hash {
+				delete(s.users, candidate)
+			}
+		}
 		s.deletes++
 	}
 	s.mu.Unlock()

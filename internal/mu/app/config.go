@@ -11,6 +11,7 @@ type Config struct {
 	MuAPIBaseURL string
 	MuAPIToken   string
 	MuNodeID     string
+	StateFile    string
 
 	TrojanAddrs []string
 	V2flyAddrs  []string
@@ -39,6 +40,7 @@ func ConfigFromEnv() *Config {
 	v.SetDefault("NODE_ID", "")
 	v.SetDefault("TROJAN_ADDRS", "")
 	v.SetDefault("V2FLY_ADDRS", "")
+	v.SetDefault("STATE_FILE", "data/mu-state.json")
 
 	// Metrics defaults
 	v.SetDefault("METRICS_ENABLED", true)
@@ -65,6 +67,7 @@ func ConfigFromEnv() *Config {
 		MuAPIBaseURL:   v.GetString("API_BASE_URL"),
 		MuAPIToken:     v.GetString("API_TOKEN"),
 		MuNodeID:       v.GetString("NODE_ID"),
+		StateFile:      v.GetString("STATE_FILE"),
 		MetricsEnabled: v.GetBool("METRICS_ENABLED"),
 		MetricsPort:    v.GetString("METRICS_PORT"),
 		Tracing: tracing.Config{
@@ -78,12 +81,25 @@ func ConfigFromEnv() *Config {
 
 	// Handle comma-separated string lists
 	if trojanAddrsStr := v.GetString("TROJAN_ADDRS"); trojanAddrsStr != "" {
-		config.TrojanAddrs = strings.Split(trojanAddrsStr, ",")
+		config.TrojanAddrs = parseAddresses(trojanAddrsStr)
 	}
 
 	if v2flyAddrsStr := v.GetString("V2FLY_ADDRS"); v2flyAddrsStr != "" {
-		config.V2flyAddrs = strings.Split(v2flyAddrsStr, ",")
+		config.V2flyAddrs = parseAddresses(v2flyAddrsStr)
 	}
 
 	return config
+}
+
+func parseAddresses(value string) []string {
+	var addresses []string
+	seen := make(map[string]bool)
+	for _, entry := range strings.Split(value, ",") {
+		address := strings.TrimSpace(entry)
+		if address != "" && !seen[address] {
+			addresses = append(addresses, address)
+			seen[address] = true
+		}
+	}
+	return addresses
 }
