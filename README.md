@@ -4,6 +4,21 @@
 
 mu is a multi-protocol user synchronization tool.
 
+## Development
+
+Use Go **1.27** (preferred toolchain **1.27.2**, recorded in `go.mod`). The Docker builder uses
+1.27.2, and CI reads the version from `go.mod`. Linting uses **golangci-lint v2.14.0** with a v2
+configuration; older golangci-lint v1 releases are not supported.
+
+```sh
+go mod download
+go test -race ./...
+go vet ./...
+make build
+golangci-lint run
+golangci-lint fmt --diff
+```
+
 ## Configuration
 
 Configuration is done via environment variables. The following environment variables are supported:
