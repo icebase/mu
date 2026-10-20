@@ -66,7 +66,7 @@ func (a *App) Init() (err error) {
 	if err := a.initMetrics(); err != nil {
 		return fmt.Errorf("init metrics: %w", err)
 	}
-	a.muClient = mu.NewClient(a.config.MuAPIBaseURL, a.config.MuAPIToken, a.config.MuNodeID)
+	a.muClient = mu.NewClient(a.config.MuAPIBaseURL, a.config.MuAPIToken, a.config.MuNodeID, mu.WithAPIDebug(a.config.MuAPIDebug))
 	for _, addr := range a.config.TrojanAddrs {
 		syncer, err := newTrojanSync(addr, a.state)
 		if err != nil {

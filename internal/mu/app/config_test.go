@@ -131,3 +131,14 @@ func TestConfigFromEnv(t *testing.T) {
 		})
 	}
 }
+
+func TestConfigAPIDebug(t *testing.T) {
+	t.Setenv("MU_API_DEBUG", "true")
+	if !ConfigFromEnv().MuAPIDebug {
+		t.Fatal("MU_API_DEBUG was not enabled")
+	}
+	t.Setenv("MU_API_DEBUG", "")
+	if ConfigFromEnv().MuAPIDebug {
+		t.Fatal("API diagnostics should default to disabled")
+	}
+}

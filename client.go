@@ -23,11 +23,29 @@ type Client struct {
 	addr, token string
 	nodeID      string
 	client      pb.MUService
+	apiDebug    bool
 }
 
-func NewClient(addr string, token string, nodeID string) *Client {
-	client := pb.NewMUServiceJSONClient(addr, &http.Client{Timeout: 10 * time.Second}, twirp.WithClientPathPrefix(""))
-	return &Client{client: client, addr: addr, token: token, nodeID: nodeID}
+// ClientOption configures MU client diagnostics.
+type ClientOption func(*Client)
+
+// WithAPIDebug enables bounded remote error details in failure logs.
+func WithAPIDebug(enabled bool) ClientOption {
+	return func(c *Client) { c.apiDebug = enabled }
+}
+
+func NewClient(addr string, token string, nodeID string, options ...ClientOption) *Client {
+	c := &Client{addr: addr, token: token, nodeID: nodeID}
+	for _, option := range options {
+		option(c)
+	}
+	c.client = pb.NewMUServiceJSONClient(addr, &diagnosticHTTPClient{
+		client: &http.Client{
+			Timeout:       10 * time.Second,
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
+		},
+	}, twirp.WithClientPathPrefix(""))
+	return c
 }
 
 func (c *Client) newContext(ctx context.Context) context.Context {
@@ -44,8 +62,9 @@ func (c *Client) GetUsers(ctx context.Context, req *pb.GetUsersRequest) (*pb.Get
 	req.NodeId = c.nodeID
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
+	ctx, diagnostics := newRequestDiagnostics(ctx)
 	response, err := c.client.GetUsers(c.newContext(ctx), req)
-	return response, apiError("get MU users", err)
+	return response, c.requestError(ctx, "GetUsers", "get MU users", diagnostics, err)
 }
 
 func (c *Client) UploadTrafficLog(ctx context.Context, req *pb.UploadTrafficLogRequest) (*pb.UploadTrafficLogResponse, error) {
@@ -55,15 +74,17 @@ func (c *Client) UploadTrafficLog(ctx context.Context, req *pb.UploadTrafficLogR
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
+	ctx, diagnostics := newRequestDiagnostics(ctx)
 	response, err := c.client.UploadTrafficLog(c.newContext(ctx), req)
-	return response, apiError("upload MU traffic", err)
+	return response, c.requestError(ctx, "UploadTrafficLog", "upload MU traffic", diagnostics, err)
 }
 
 func (c *Client) Ping(ctx context.Context, req *pb.PingRequest) (*pb.PingResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
+	ctx, diagnostics := newRequestDiagnostics(ctx)
 	response, err := c.client.Ping(c.newContext(ctx), req)
-	return response, apiError("ping MU", err)
+	return response, c.requestError(ctx, "Ping", "ping MU", diagnostics, err)
 }
 
 // Remote messages can contain authentication material. Expose only the error category.

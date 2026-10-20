@@ -10,6 +10,7 @@ import (
 type Config struct {
 	MuAPIBaseURL string
 	MuAPIToken   string
+	MuAPIDebug   bool
 	MuNodeID     string
 	StateFile    string
 
@@ -37,6 +38,7 @@ func ConfigFromEnv() *Config {
 	// Set default values
 	v.SetDefault("API_BASE_URL", "")
 	v.SetDefault("API_TOKEN", "")
+	v.SetDefault("API_DEBUG", false)
 	v.SetDefault("NODE_ID", "")
 	v.SetDefault("TROJAN_ADDRS", "")
 	v.SetDefault("V2FLY_ADDRS", "")
@@ -66,6 +68,7 @@ func ConfigFromEnv() *Config {
 	config := &Config{
 		MuAPIBaseURL:   v.GetString("API_BASE_URL"),
 		MuAPIToken:     v.GetString("API_TOKEN"),
+		MuAPIDebug:     v.GetBool("API_DEBUG"),
 		MuNodeID:       v.GetString("NODE_ID"),
 		StateFile:      v.GetString("STATE_FILE"),
 		MetricsEnabled: v.GetBool("METRICS_ENABLED"),
