@@ -27,10 +27,32 @@ Configuration is done via environment variables. The following environment varia
 |----------|------|------|
 | `MU_API_BASE_URL` | Base URL for the API | `https://api.example.com` |
 | `MU_API_TOKEN` | API access token | `your-api-token` |
+| `MU_API_DEBUG` | Include remote error details in API failure logs (default `false`) | `true` |
 | `MU_NODE_ID` | Required stable node identity; bound to the state file | `node-1` |
 | `MU_STATE_FILE` | Private persistent state file (default `data/mu-state.json`) | `/var/lib/mu/state.json` |
 | `MU_TROJAN_ADDRS` | Comma-separated list of Trojan server addresses | `trojan1.example.com,trojan2.example.com` |
 | `MU_V2FLY_ADDRS` | Comma-separated list of V2Fly server addresses | `v2fly1.example.com,v2fly2.example.com` |
+
+### API failure diagnostics
+
+Failed API calls emit `MU API request failed` with `rpc`, `node_id`, `http_status`,
+`elapsed`, and the Twirp `code` when available. `request_id` (X-Request-ID) and
+`cf_ray` (CF-Ray) are included when the server supplies them. `http_status=0`
+means no HTTP response was received; `transport_failure` and `context_error`
+help identify network failures and deadline/cancellation errors.
+
+To investigate errors such as `ping MU: internal`, set `MU_API_DEBUG=true` and
+restart mu (or recreate its Docker container after updating the environment).
+This adds `remote_message`, intermediary `response_body`, and transport error
+causes to failure logs. Each detail is limited to 2048 bytes and occurrences
+of the configured API token are replaced with `[REDACTED]`. Other secrets or
+user data in server responses are not automatically redacted; enable this
+only while diagnosing and review logs before sharing them. Request headers,
+request bodies, and arbitrary response metadata are not logged.
+
+A Twirp `internal` code alone does not identify the underlying cause. Use the
+remote message and request ID to correlate with API server logs; if the server
+returns a generic message, its own logs are needed for further details.
 
 ### Configuration Example
 
