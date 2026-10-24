@@ -31,7 +31,9 @@ Configuration is done via environment variables. The following environment varia
 | `MU_NODE_ID` | Required stable node identity; bound to the state file | `node-1` |
 | `MU_STATE_FILE` | Private persistent state file (default `data/mu-state.json`) | `/var/lib/mu/state.json` |
 | `MU_TROJAN_ADDRS` | Comma-separated list of Trojan server addresses | `trojan1.example.com,trojan2.example.com` |
-| `MU_V2FLY_ADDRS` | Comma-separated list of V2Fly server addresses | `v2fly1.example.com,v2fly2.example.com` |
+| `MU_V2FLY_ADDRS` | Comma-separated list of V2Fly server addresses (VMess inbound, tag `proxy`) | `v2fly1.example.com,v2fly2.example.com` |
+| `MU_VLESS_ADDRS` | Comma-separated list of V2Fly server addresses with a VLESS inbound | `vless1.example.com,vless2.example.com` |
+| `MU_VLESS_INBOUND_TAG` | Tag of the VLESS inbound on those servers (default `vless`) | `vless` |
 
 ### API failure diagnostics
 
@@ -68,6 +70,10 @@ export MU_TROJAN_ADDRS="trojan1.example.com,trojan2.example.com"
 
 # Set V2Fly server addresses
 export MU_V2FLY_ADDRS="v2fly1.example.com,v2fly2.example.com"
+
+# Set V2Fly servers hosting a VLESS inbound (optional)
+export MU_VLESS_ADDRS="vless1.example.com"
+export MU_VLESS_INBOUND_TAG="vless"
 ```
 
 ## Docker Compose
@@ -89,6 +95,7 @@ services:
       - MU_STATE_FILE=/var/lib/mu/state.json
       - MU_TROJAN_ADDRS=trojan1.example.com,trojan2.example.com
       - MU_V2FLY_ADDRS=v2fly1.example.com,v2fly2.example.com
+      - MU_VLESS_ADDRS=vless1.example.com
     volumes:
       - mu-state:/var/lib/mu
     networks:
@@ -126,6 +133,24 @@ Malformed records, duplicate UUIDs, duplicate case-insensitive V2Ray emails, and
 identities reject the affected snapshot before authorization changes. `enable` must be `0` or `1`.
 MU must be the sole user manager for each configured Trojan instance and V2Ray `proxy` inbound.
 The APIs use plaintext gRPC: keep them on a trusted private network and do not expose them publicly.
+
+### VLESS support
+
+`MU_VLESS_ADDRS` manages a **VLESS** inbound (tag `MU_VLESS_INBOUND_TAG`, default `vless`) on a
+v2fly (`v2ray-core` v5) instance through the same gRPC `HandlerService`/`StatsService` API as V2Fly.
+Xray is not supported. Users are the same `GetUsers` snapshot and the same UUID as for VMess;
+`alter_id` is ignored and the account uses empty flow and `none` encryption.
+
+- **Backend email suffix.** V2Ray statistics are keyed by email only, so VLESS users are installed
+  with the backend email `<email>#vless`. This keeps VLESS and VMess counters of one V2Ray instance
+  disjoint, so a VMess and a VLESS inbound can share an instance without double billing. Each syncer
+  ignores the other protocol's counters. Emails ending in `#vless` (case-insensitive) are reserved and
+  reject the whole snapshot for the V2Fly and VLESS backends.
+- **Inbound requirements.** The VLESS inbound must have its own tag (do not reuse `proxy`), MU must be
+  its sole user manager, and it must start with an empty user list, as for VMess. Enable per-user
+  statistics (`statsUserUplink`/`statsUserDownlink`) for the user's policy level.
+- **Traffic type.** VLESS traffic is uploaded as `TRAFFIC_TYPE_V2FLY`; use the `vless` sync label in
+  metrics to tell it apart. State is kept under a separate `vless:<addr>:<tag>` key.
 
 ### Persistent state is required
 

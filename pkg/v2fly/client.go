@@ -13,10 +13,12 @@ import (
 	statscmd "github.com/v2fly/v2ray-core/v5/app/stats/command"
 	"github.com/v2fly/v2ray-core/v5/common/protocol"
 	"github.com/v2fly/v2ray-core/v5/common/serial"
+	"github.com/v2fly/v2ray-core/v5/proxy/vless"
 	"github.com/v2fly/v2ray-core/v5/proxy/vmess"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 const requestTimeout = 5 * time.Second
@@ -32,18 +34,51 @@ type Manager struct {
 	client      command.HandlerServiceClient
 	statsClient statscmd.StatsServiceClient
 	inBoundTag  string
+	protocol    Protocol
 }
+
+// Protocol selects the account type installed into the inbound.
+type Protocol int
+
+const (
+	// ProtocolVMess installs vmess.Account users. It is the default.
+	ProtocolVMess Protocol = iota
+	// ProtocolVLESS installs vless.Account users.
+	ProtocolVLESS
+)
+
+// Option customizes a Manager.
+type Option func(*Manager)
+
+// WithProtocol selects the inbound protocol managed by the Manager.
+func WithProtocol(p Protocol) Option { return func(m *Manager) { m.protocol = p } }
+
 type TrafficInfo struct {
 	Up, Down       int64
 	HasUp, HasDown bool
 }
 
-func NewManager(addr, tag string) (*Manager, error) {
+func NewManager(addr, tag string, opts ...Option) (*Manager, error) {
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, errors.New("invalid V2Ray API address")
 	}
-	return &Manager{conn: conn, client: command.NewHandlerServiceClient(conn), statsClient: statscmd.NewStatsServiceClient(conn), inBoundTag: tag}, nil
+	m := &Manager{conn: conn, client: command.NewHandlerServiceClient(conn), statsClient: statscmd.NewStatsServiceClient(conn), inBoundTag: tag}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m, nil
+}
+
+func (m *Manager) account(u User) *anypb.Any {
+	if m.protocol == ProtocolVLESS {
+		// Flow is left empty and Encryption is "none": the v2fly VLESS inbound supports nothing else.
+		return serial.ToTypedMessage(&vless.Account{Id: u.GetUUID(), Encryption: "none"})
+	}
+	return serial.ToTypedMessage(&vmess.Account{
+		Id: u.GetUUID(), AlterId: u.GetAlterID(),
+		SecuritySettings: &protocol.SecurityConfig{Type: protocol.SecurityType_AUTO},
+	})
 }
 func (m *Manager) Close() error { return m.conn.Close() }
 func (m *Manager) AddUser(ctx context.Context, u User) (bool, error) {
@@ -53,10 +88,7 @@ func (m *Manager) AddUser(ctx context.Context, u User) (bool, error) {
 		Tag: m.inBoundTag,
 		Operation: serial.ToTypedMessage(&command.AddUserOperation{User: &protocol.User{
 			Level: u.GetLevel(), Email: u.GetEmail(),
-			Account: serial.ToTypedMessage(&vmess.Account{
-				Id: u.GetUUID(), AlterId: u.GetAlterID(),
-				SecuritySettings: &protocol.SecurityConfig{Type: protocol.SecurityType_AUTO},
-			}),
+			Account: m.account(u),
 		}}),
 	})
 	if IsAlreadyExistsError(err) {

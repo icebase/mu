@@ -14,10 +14,16 @@ import (
 
 const tag = "proxy"
 
+// vlessEmailSuffix is appended to the MU email to form the V2Ray backend email of VLESS users.
+// V2Ray statistics are keyed by email only, so this keeps VLESS and VMess counters of one
+// V2Ray instance disjoint and prevents the same traffic from being billed by both syncers.
+const vlessEmailSuffix = "#vless"
+
 type v2flySync struct {
 	manager *v2fly.Manager
 	state   *syncState
 	key     string
+	name    string
 }
 
 func newV2flySync(addr string, state *syncState) (*v2flySync, error) {
@@ -28,9 +34,48 @@ func newV2flySync(addr string, state *syncState) (*v2flySync, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &v2flySync{manager: manager, state: state, key: "v2fly:" + addr + ":" + tag}, nil
+	return &v2flySync{manager: manager, state: state, key: "v2fly:" + addr + ":" + tag, name: protocolV2Fly}, nil
 }
-func (v *v2flySync) Name() string { return protocolV2Fly }
+
+// newVlessSync manages a VLESS inbound of a v2fly instance. Backend emails carry vlessEmailSuffix.
+func newVlessSync(addr, inboundTag string, state *syncState) (*v2flySync, error) {
+	if state == nil {
+		return nil, errors.New("synchronization state is required")
+	}
+	if strings.TrimSpace(inboundTag) == "" {
+		return nil, errors.New("VLESS inbound tag is required")
+	}
+	manager, err := v2fly.NewManager(addr, inboundTag, v2fly.WithProtocol(v2fly.ProtocolVLESS))
+	if err != nil {
+		return nil, err
+	}
+	return &v2flySync{manager: manager, state: state, key: "vless:" + addr + ":" + inboundTag, name: protocolVLESS}, nil
+}
+func (v *v2flySync) Name() string {
+	if v.name == "" {
+		return protocolV2Fly
+	}
+	return v.name
+}
+
+// userList returns the traffic identities that belong to this syncer's protocol. Counters of the
+// other protocol sharing the same V2Ray instance are ignored.
+func (v *v2flySync) userList(ctx context.Context) ([]v2fly.UserData, error) {
+	list, err := v.manager.GetUserList(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	own := list[:0:0]
+	for _, entry := range list {
+		if hasVlessSuffix(entry.User.GetEmail()) == (v.Name() == protocolVLESS) {
+			own = append(own, entry)
+		}
+	}
+	return own, nil
+}
+func hasVlessSuffix(email string) bool {
+	return strings.HasSuffix(strings.ToLower(email), vlessEmailSuffix)
+}
 func (v *v2flySync) Close() error { return v.manager.Close() }
 func (v *v2flySync) capture(users map[string]managedUser, snapshot []v2fly.UserData) ([]*pb.UserTrafficLog, error) {
 	samples := make(map[string]trafficSample, len(snapshot))
@@ -47,7 +92,7 @@ func (v *v2flySync) Sync(ctx context.Context, users []*pb.User) error {
 		return err
 	}
 	var errs []error
-	snapshot, statsErr := v.manager.GetUserList(ctx, false)
+	snapshot, statsErr := v.userList(ctx)
 	if statsErr != nil {
 		// Authorization must not depend on the stats service. Non-reset counters can be collected later.
 		errs = append(errs, statsErr)
@@ -140,7 +185,7 @@ func (v *v2flySync) GetTraffic(ctx context.Context, users []*pb.User) ([]*pb.Use
 	if err != nil {
 		return nil, err
 	}
-	snapshot, err := v.manager.GetUserList(ctx, false)
+	snapshot, err := v.userList(ctx)
 	if err != nil {
 		return nil, err
 	}

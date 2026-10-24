@@ -34,7 +34,7 @@ func TestInvalidSnapshotsAreRejectedBeforeBackendCalls(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			backends := []UserSync{&v2flySync{}}
+			backends := []UserSync{&v2flySync{}, &v2flySync{name: protocolVLESS}}
 			if !tt.v2Only {
 				backends = append(backends, &trojanSync{})
 			}
