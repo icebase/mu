@@ -81,6 +81,13 @@ func (a *App) Init() (err error) {
 		}
 		a.userSync = append(a.userSync, syncer)
 	}
+	for _, addr := range a.config.VlessAddrs {
+		syncer, err := newVlessSync(addr, a.config.VlessInboundTag, a.state)
+		if err != nil {
+			return err
+		}
+		a.userSync = append(a.userSync, syncer)
+	}
 	return nil
 }
 func (a *App) initTracing() error {

@@ -13,6 +13,7 @@ import (
 
 const protocolTrojan = "trojan"
 const protocolV2Fly = "v2fly"
+const protocolVLESS = "vless"
 
 // GetTraffic durably queues deltas in the shared state before returning them for metrics.
 // Sync also takes a final snapshot before changing authorization. Neither operation resets counters.
@@ -35,7 +36,8 @@ func desiredUsers(users []*pb.User, protocol string) (map[string]managedUser, ma
 		v := user.V2RayUser
 		uuidKey := v.Uuid
 		id := common.SHA224String(v.Uuid)
-		if protocol == protocolV2Fly {
+		backendEmail := v.Email
+		if protocol == protocolV2Fly || protocol == protocolVLESS {
 			parsed, err := uuid.ParseString(v.Uuid)
 			if err != nil {
 				return nil, nil, fmt.Errorf("invalid V2Ray UUID at index %d", index)
@@ -44,7 +46,14 @@ func desiredUsers(users []*pb.User, protocol string) (map[string]managedUser, ma
 			if strings.TrimSpace(v.Email) == "" || strings.TrimSpace(v.Email) != v.Email || strings.Contains(v.Email, ">>>") {
 				return nil, nil, fmt.Errorf("invalid V2Ray email at index %d", index)
 			}
-			id = strings.ToLower(v.Email)
+			// The suffix is reserved for VLESS backend identities; reject it so protocols cannot collide.
+			if hasVlessSuffix(v.Email) {
+				return nil, nil, fmt.Errorf("V2Ray email at index %d uses reserved suffix %q", index, vlessEmailSuffix)
+			}
+			if protocol == protocolVLESS {
+				backendEmail += vlessEmailSuffix
+			}
+			id = strings.ToLower(backendEmail)
 			if emails[id] {
 				return nil, nil, errors.New("duplicate V2Ray email in snapshot")
 			}
@@ -54,7 +63,7 @@ func desiredUsers(users []*pb.User, protocol string) (map[string]managedUser, ma
 			return nil, nil, errors.New("duplicate user UUID in snapshot")
 		}
 		uuids[uuidKey] = true
-		record := managedUser{ID: user.Id, UUID: v.Uuid, Email: v.Email, Level: v.Level, AlterID: v.AlterId}
+		record := managedUser{ID: user.Id, UUID: v.Uuid, Email: backendEmail, Level: v.Level, AlterID: v.AlterId}
 		all[id] = record
 		if user.Enable == 1 {
 			enabled[id] = record

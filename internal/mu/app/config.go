@@ -16,6 +16,9 @@ type Config struct {
 
 	TrojanAddrs []string
 	V2flyAddrs  []string
+	VlessAddrs  []string
+	// VlessInboundTag is the V2Ray inbound tag of the VLESS inbound (default "vless").
+	VlessInboundTag string
 
 	// Metrics 配置
 	MetricsEnabled bool
@@ -32,6 +35,8 @@ type Config struct {
 // - MU_NODE_ID: Node identifier
 // - MU_TROJAN_ADDRS: Comma-separated list of Trojan addresses
 // - MU_V2FLY_ADDRS: Comma-separated list of V2Fly addresses
+// - MU_VLESS_ADDRS: Comma-separated list of V2Fly addresses hosting a VLESS inbound
+// - MU_VLESS_INBOUND_TAG: Tag of the VLESS inbound (default "vless")
 func ConfigFromEnv() *Config {
 	v := viper.New()
 
@@ -42,6 +47,8 @@ func ConfigFromEnv() *Config {
 	v.SetDefault("NODE_ID", "")
 	v.SetDefault("TROJAN_ADDRS", "")
 	v.SetDefault("V2FLY_ADDRS", "")
+	v.SetDefault("VLESS_ADDRS", "")
+	v.SetDefault("VLESS_INBOUND_TAG", "vless")
 	v.SetDefault("STATE_FILE", "data/mu-state.json")
 
 	// Metrics defaults
@@ -66,13 +73,14 @@ func ConfigFromEnv() *Config {
 
 	// Create a config struct with values from environment variables
 	config := &Config{
-		MuAPIBaseURL:   v.GetString("API_BASE_URL"),
-		MuAPIToken:     v.GetString("API_TOKEN"),
-		MuAPIDebug:     v.GetBool("API_DEBUG"),
-		MuNodeID:       v.GetString("NODE_ID"),
-		StateFile:      v.GetString("STATE_FILE"),
-		MetricsEnabled: v.GetBool("METRICS_ENABLED"),
-		MetricsPort:    v.GetString("METRICS_PORT"),
+		MuAPIBaseURL:    v.GetString("API_BASE_URL"),
+		MuAPIToken:      v.GetString("API_TOKEN"),
+		MuAPIDebug:      v.GetBool("API_DEBUG"),
+		MuNodeID:        v.GetString("NODE_ID"),
+		StateFile:       v.GetString("STATE_FILE"),
+		VlessInboundTag: v.GetString("VLESS_INBOUND_TAG"),
+		MetricsEnabled:  v.GetBool("METRICS_ENABLED"),
+		MetricsPort:     v.GetString("METRICS_PORT"),
 		Tracing: tracing.Config{
 			Enabled:     v.GetBool("TRACING_ENABLED"),
 			ServiceName: v.GetString("TRACING_SERVICE_NAME"),
@@ -89,6 +97,10 @@ func ConfigFromEnv() *Config {
 
 	if v2flyAddrsStr := v.GetString("V2FLY_ADDRS"); v2flyAddrsStr != "" {
 		config.V2flyAddrs = parseAddresses(v2flyAddrsStr)
+	}
+
+	if vlessAddrsStr := v.GetString("VLESS_ADDRS"); vlessAddrsStr != "" {
+		config.VlessAddrs = parseAddresses(vlessAddrsStr)
 	}
 
 	return config
