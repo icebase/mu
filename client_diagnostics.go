@@ -9,6 +9,9 @@ import (
 	"time"
 
 	"github.com/twitchtv/twirp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const maxDiagnosticLength = 2048
@@ -32,6 +35,8 @@ func newRequestDiagnostics(ctx context.Context) (context.Context, *requestDiagno
 type diagnosticHTTPClient struct{ client *http.Client }
 
 func (c *diagnosticHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	// Propagate the trace context (traceparent/tracestate/baggage) so API-side traces can be joined.
+	otel.GetTextMapPropagator().Inject(req.Context(), propagation.HeaderCarrier(req.Header))
 	response, err := c.client.Do(req)
 	if details, ok := req.Context().Value(diagnosticsKey{}).(*requestDiagnostics); ok {
 		details.transportErr = err
@@ -57,6 +62,9 @@ func (c *Client) requestError(ctx context.Context, rpc, operation string, detail
 	}
 	if details.cfRay != "" {
 		attrs = append(attrs, "cf_ray", c.diagnosticText(details.cfRay))
+	}
+	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
+		attrs = append(attrs, "trace_id", sc.TraceID().String(), "span_id", sc.SpanID().String())
 	}
 	if ctx.Err() != nil {
 		attrs = append(attrs, "context_error", ctx.Err().Error())

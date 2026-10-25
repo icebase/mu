@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/icebase/mu/internal/mu/app/metrics"
+	"github.com/icebase/mu/internal/mu/app/tracing"
 	"github.com/icebase/mu/pkg/trojan"
 	pb "github.com/icebase/mu/proto/v1"
 	"github.com/p4gefau1t/trojan-go/api/service"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type trojanSync struct {
@@ -75,7 +78,9 @@ func (t *trojanSync) Sync(ctx context.Context, users []*pb.User) error {
 		if _, keep := enabled[id]; keep {
 			continue
 		}
-		if err := t.tjManager.RemoveUser(ctx, "", id); err != nil {
+		err := t.tjManager.RemoveUser(ctx, "", id)
+		metrics.ObserveBackendUserOperation(t.Name(), operationRemove, err)
+		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
@@ -84,13 +89,20 @@ func (t *trojanSync) Sync(ctx context.Context, users []*pb.User) error {
 	applied := make(map[string]managedUser)
 	for id, user := range enabled {
 		if !present[id] {
-			if err := t.tjManager.AddUser(ctx, user.UUID); err != nil {
+			err := t.tjManager.AddUser(ctx, user.UUID)
+			metrics.ObserveBackendUserOperation(t.Name(), operationAdd, err)
+			if err != nil {
 				errs = append(errs, fmt.Errorf("add Trojan user ID %d: %w", user.ID, err))
 				continue
 			}
 		}
 		applied[id] = user
 	}
+	tracing.SetAttributes(ctx,
+		attribute.Int("sync.users_desired", len(all)), attribute.Int("sync.users_enabled", len(enabled)),
+		attribute.Int("sync.users_present", len(present)), attribute.Int("sync.users_removed", len(removed)),
+		attribute.Int("sync.users_applied", len(applied)),
+	)
 	if err := t.state.complete(t.key, applied, removed); err != nil {
 		errs = append(errs, err)
 	}

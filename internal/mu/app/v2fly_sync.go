@@ -8,8 +8,11 @@ import (
 	"maps"
 	"strings"
 
+	"github.com/icebase/mu/internal/mu/app/metrics"
+	"github.com/icebase/mu/internal/mu/app/tracing"
 	"github.com/icebase/mu/pkg/v2fly"
 	pb "github.com/icebase/mu/proto/v1"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 const tag = "proxy"
@@ -148,7 +151,9 @@ func (v *v2flySync) Sync(ctx context.Context, users []*pb.User) error {
 		if _, keep := enabled[id]; keep {
 			continue
 		}
-		if err := v.manager.RemoveUser(ctx, user.v2User()); err != nil {
+		err := v.manager.RemoveUser(ctx, user.v2User())
+		metrics.ObserveBackendUserOperation(v.Name(), operationRemove, err)
+		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
@@ -159,19 +164,28 @@ func (v *v2flySync) Sync(ctx context.Context, users []*pb.User) error {
 		old, exists := previous.Applied[id]
 		// Add is not an update. Replace unknown/changed configurations once; persist the applied identity.
 		if !exists || !sameV2Account(old, user) {
-			if err := v.manager.RemoveUser(ctx, user.v2User()); err != nil {
+			err := v.manager.RemoveUser(ctx, user.v2User())
+			metrics.ObserveBackendUserOperation(v.Name(), operationRemove, err)
+			if err != nil {
 				errs = append(errs, err)
 				continue
 			}
 			removed = append(removed, id)
 		}
 		// Idempotent Add also restores users after a backend restart, regardless of traffic-counter existence.
-		if _, err := v.manager.AddUser(ctx, user.v2User()); err != nil {
+		_, err := v.manager.AddUser(ctx, user.v2User())
+		metrics.ObserveBackendUserOperation(v.Name(), operationAdd, err)
+		if err != nil {
 			errs = append(errs, fmt.Errorf("add V2Ray user ID %d: %w", user.ID, err))
 			continue
 		}
 		applied[id] = user
 	}
+	tracing.SetAttributes(ctx,
+		attribute.Int("sync.users_desired", len(all)), attribute.Int("sync.users_enabled", len(enabled)),
+		attribute.Int("sync.users_observed", len(snapshot)), attribute.Int("sync.users_removed", len(removed)),
+		attribute.Int("sync.users_applied", len(applied)), attribute.Bool("sync.stats_available", statsErr == nil),
+	)
 	if err := v.state.complete(v.key, applied, removed); err != nil {
 		errs = append(errs, err)
 	}

@@ -30,13 +30,16 @@ type Config struct {
 
 // ConfigFromEnv initializes and returns a Config object with values from environment variables.
 // Environment variable names:
-// - MU_API_BASE_URL: API base URL
-// - MU_API_TOKEN: API token
-// - MU_NODE_ID: Node identifier
-// - MU_TROJAN_ADDRS: Comma-separated list of Trojan addresses
-// - MU_V2FLY_ADDRS: Comma-separated list of V2Fly addresses
-// - MU_VLESS_ADDRS: Comma-separated list of V2Fly addresses hosting a VLESS inbound
-// - MU_VLESS_INBOUND_TAG: Tag of the VLESS inbound (default "vless")
+//   - MU_API_BASE_URL: API base URL
+//   - MU_API_TOKEN: API token
+//   - MU_NODE_ID: Node identifier
+//   - MU_TROJAN_ADDRS: Comma-separated list of Trojan addresses
+//   - MU_V2FLY_ADDRS: Comma-separated list of V2Fly addresses
+//   - MU_VLESS_ADDRS: Comma-separated list of V2Fly addresses hosting a VLESS inbound
+//   - MU_VLESS_INBOUND_TAG: Tag of the VLESS inbound (default "vless")
+//   - MU_METRICS_ENABLED / MU_METRICS_PORT: Prometheus endpoint (default true / 9090)
+//   - MU_TRACING_ENABLED, MU_TRACING_EXPORTER, MU_TRACING_ENDPOINT, MU_TRACING_INSECURE,
+//     MU_TRACING_SERVICE_NAME, MU_TRACING_SAMPLE_RATE: OpenTelemetry tracing (disabled by default)
 func ConfigFromEnv() *Config {
 	v := viper.New()
 
@@ -58,7 +61,8 @@ func ConfigFromEnv() *Config {
 	// Tracing defaults
 	v.SetDefault("TRACING_ENABLED", false)
 	v.SetDefault("TRACING_SERVICE_NAME", "mu-service")
-	v.SetDefault("TRACING_ENDPOINT", "localhost:4317")
+	v.SetDefault("TRACING_EXPORTER", tracing.ExporterOTLP)
+	v.SetDefault("TRACING_ENDPOINT", "")
 	v.SetDefault("TRACING_INSECURE", true)
 	v.SetDefault("TRACING_SAMPLE_RATE", 1.0)
 
@@ -84,6 +88,7 @@ func ConfigFromEnv() *Config {
 		Tracing: tracing.Config{
 			Enabled:     v.GetBool("TRACING_ENABLED"),
 			ServiceName: v.GetString("TRACING_SERVICE_NAME"),
+			Exporter:    v.GetString("TRACING_EXPORTER"),
 			Endpoint:    v.GetString("TRACING_ENDPOINT"),
 			Insecure:    v.GetBool("TRACING_INSECURE"),
 			SampleRate:  v.GetFloat64("TRACING_SAMPLE_RATE"),

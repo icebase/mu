@@ -34,6 +34,14 @@ Configuration is done via environment variables. The following environment varia
 | `MU_V2FLY_ADDRS` | Comma-separated list of V2Fly server addresses (VMess inbound, tag `proxy`) | `v2fly1.example.com,v2fly2.example.com` |
 | `MU_VLESS_ADDRS` | Comma-separated list of V2Fly server addresses with a VLESS inbound | `vless1.example.com,vless2.example.com` |
 | `MU_VLESS_INBOUND_TAG` | Tag of the VLESS inbound on those servers (default `vless`) | `vless` |
+| `MU_METRICS_ENABLED` | Serve Prometheus metrics at `/metrics` (default `true`) | `true` |
+| `MU_METRICS_PORT` | Metrics listen port, all interfaces (default `9090`) | `9090` |
+| `MU_TRACING_ENABLED` | Enable OpenTelemetry tracing (default `false`) | `true` |
+| `MU_TRACING_EXPORTER` | `otlp` (OTLP/gRPC, default) or `stdout` (JSON spans on stderr) | `otlp` |
+| `MU_TRACING_ENDPOINT` | OTLP collector `host:port` or URL; empty defers to `OTEL_EXPORTER_OTLP_*`, then `localhost:4317` | `otel-collector:4317` |
+| `MU_TRACING_INSECURE` | Plaintext gRPC for `host:port` endpoints (default `true`); URLs use their scheme | `false` |
+| `MU_TRACING_SERVICE_NAME` | `service.name` resource attribute (default `mu-service`) | `mu-node-1` |
+| `MU_TRACING_SAMPLE_RATE` | Parent-based trace ID ratio, `0`–`1` (default `1`) | `0.1` |
 
 ### API failure diagnostics
 
@@ -74,6 +82,94 @@ export MU_V2FLY_ADDRS="v2fly1.example.com,v2fly2.example.com"
 # Set V2Fly servers hosting a VLESS inbound (optional)
 export MU_VLESS_ADDRS="vless1.example.com"
 export MU_VLESS_INBOUND_TAG="vless"
+```
+
+## Observability
+
+mu exposes Prometheus metrics and, optionally, OpenTelemetry traces. Metrics are always on unless
+`MU_METRICS_ENABLED=false`; tracing is off by default and costs nothing while disabled. The metrics
+endpoint is unauthenticated and listens on all interfaces: keep it on a trusted network.
+
+### Metrics
+
+Scrape `http://<host>:9090/metrics`. With an OpenTelemetry Collector, use the `prometheus` receiver
+(see below) to forward them over OTLP.
+
+| Metric | Type | Labels | Use |
+|--------|------|--------|-----|
+| `mu_build_info` | gauge | `version`, `go_version` | Which build is running |
+| `mu_api_requests_total` | counter | `rpc`, `status`, `code` | MU API outcomes per RPC; `code` is the Twirp error code (transport failures appear as `internal`) |
+| `mu_api_request_duration_seconds` | histogram | `rpc` | MU API latency per RPC |
+| `mu_ping_total`, `mu_ping_duration_seconds` | counter, histogram | `status` | Ping job |
+| `mu_user_sync_total`, `mu_user_sync_duration_seconds` | counter, histogram | `status`, `sync_type` | Per-protocol user sync (`trojan`, `v2fly`, `vless`) |
+| `mu_traffic_sync_total`, `mu_traffic_sync_duration_seconds` | counter, histogram | `status` | Traffic collection + upload cycle |
+| `mu_job_last_success_timestamp_seconds` | gauge | `job` (`ping`, `sync_user`, `sync_traffic`) | Staleness alerts |
+| `mu_traffic_outbox_batches`, `mu_traffic_outbox_logs` | gauge | – | Durable upload queue size; keeps growing while the API is unreachable |
+| `mu_backend_user_operations_total` | counter | `sync_type`, `operation` (`add`, `remove`), `status` | Add/remove calls against backends (V2Ray adds are idempotent and repeat every sync) |
+| `mu_traffic_logs_collected`, `mu_traffic_logs_uploaded` | gauge | `sync_type` / – | Records in the last cycle |
+| `mu_total_upload_bytes`, `mu_total_download_bytes` | counter | `sync_type` | Reported traffic (VLESS is counted under `v2fly`) |
+| `mu_users_count` | gauge | `node_id` | Users in the last snapshot |
+| `mu_errors_total` | counter | `operation`, `error_type` | Failures by stage |
+
+Example alerts: `time() - mu_job_last_success_timestamp_seconds{job="sync_traffic"} > 300` and
+`mu_traffic_outbox_logs > 0` for longer than a few cycles.
+
+### Traces
+
+Every 60-second cycle produces three traces (`App.ping`, `App.syncTraffic`, `App.syncUser`):
+
+- `App.ping` → `MU.Ping`
+- `App.syncTraffic` → `App.flushTraffic` (attributes `traffic.batches_uploaded`, `traffic.logs_uploaded`) →
+  `MU.UploadTrafficLog`, then `MU.GetUsers` and one `App.syncTraffic.<type>` span per backend
+  (`traffic.logs_collected`); the root span carries `traffic.outbox_batches` / `traffic.outbox_logs`.
+- `App.syncUser` (`mu.users`) → `MU.GetUsers` and one `App.syncUser.<type>` span per backend with
+  `sync.users_desired`, `sync.users_enabled`, `sync.users_removed`, `sync.users_applied`
+  (V2Fly/VLESS also `sync.users_observed` and `sync.stats_available`).
+
+`MU.*` spans are client spans with `rpc.system=twirp`, `rpc.method`, `mu.node_id`,
+`http.response.status_code`, `rpc.twirp.error_code`, `mu.request_id` and `mu.cf_ray` when available.
+Failures set the span status to error; only the sanitized error category is recorded, never remote
+messages or the API token. The W3C `traceparent` header is sent to the MU API, so API-side traces can
+join mu's. Resource attributes: `service.name`, `service.version`, `mu.node_id`, host and process
+information; `OTEL_RESOURCE_ATTRIBUTES` and `OTEL_EXPORTER_OTLP_*` (headers, TLS, timeout, ...) are honored.
+`MU API request failed` logs include `trace_id` and `span_id` when tracing is on.
+
+Debug without a collector (no Docker needed):
+
+```bash
+MU_TRACING_ENABLED=true MU_TRACING_EXPORTER=stdout ./bin/mu 2> mu.log
+```
+
+Send traces to a collector:
+
+```bash
+export MU_TRACING_ENABLED=true
+export MU_TRACING_ENDPOINT=otel-collector:4317   # or https://collector.example.com:4317
+export MU_TRACING_SAMPLE_RATE=0.25
+```
+
+Minimal Collector configuration receiving OTLP traces and scraping mu's metrics:
+
+```yaml
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: mu
+          scrape_interval: 30s
+          static_configs:
+            - targets: ["mu:9090"]
+exporters:
+  debug:
+    verbosity: detailed
+service:
+  pipelines:
+    traces:  { receivers: [otlp], exporters: [debug] }
+    metrics: { receivers: [prometheus], exporters: [debug] }
 ```
 
 ## Docker Compose
