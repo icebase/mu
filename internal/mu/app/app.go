@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -18,7 +19,6 @@ import (
 	pb "github.com/icebase/mu/proto/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -60,13 +60,15 @@ func (a *App) Init() (err error) {
 	if err != nil {
 		return fmt.Errorf("open synchronization state: %w", err)
 	}
+	metrics.SetOutbox(a.state.pendingStats())
 	if err := a.initTracing(); err != nil {
 		return fmt.Errorf("init tracing: %w", err)
 	}
 	if err := a.initMetrics(); err != nil {
 		return fmt.Errorf("init metrics: %w", err)
 	}
-	a.muClient = mu.NewClient(a.config.MuAPIBaseURL, a.config.MuAPIToken, a.config.MuNodeID, mu.WithAPIDebug(a.config.MuAPIDebug))
+	a.muClient = mu.NewClient(a.config.MuAPIBaseURL, a.config.MuAPIToken, a.config.MuNodeID,
+		mu.WithAPIDebug(a.config.MuAPIDebug), mu.WithRequestObserver(metrics.ObserveAPIRequest))
 	for _, addr := range a.config.TrojanAddrs {
 		syncer, err := newTrojanSync(addr, a.state)
 		if err != nil {
@@ -91,15 +93,22 @@ func (a *App) Init() (err error) {
 	return nil
 }
 func (a *App) initTracing() error {
-	provider, err := tracing.InitTracer(a.ctx, a.config.Tracing)
+	cfg := a.config.Tracing
+	cfg.ServiceVersion = version
+	cfg.NodeID = a.config.MuNodeID
+	provider, err := tracing.InitTracer(a.ctx, cfg)
 	if err != nil {
 		return err
 	}
 	a.tracerProvider = provider
-	a.tracer = otel.Tracer("mu-app")
+	a.tracer = tracing.Tracer()
+	if cfg.Enabled {
+		slog.Info("tracing enabled", "exporter", cfg.Exporter, "sample_rate", cfg.SampleRate)
+	}
 	return nil
 }
 func (a *App) initMetrics() error {
+	metrics.BuildInfo.WithLabelValues(version, runtime.Version()).Set(1)
 	if !a.config.MetricsEnabled {
 		return nil
 	}
@@ -108,7 +117,7 @@ func (a *App) initMetrics() error {
 	a.metricsServer = &http.Server{Addr: ":" + a.config.MetricsPort, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		if err := a.metricsServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			slog.Error("metrics server failed")
+			slog.Error("metrics server failed", "addr", a.metricsServer.Addr, "error", err)
 		}
 	}()
 	return nil
@@ -166,9 +175,10 @@ func (a *App) jobs() {
 		}
 	}
 }
-func (a *App) ping() error {
+func (a *App) ping() (resultErr error) {
 	ctx, span := a.tracer.Start(a.ctx, "App.ping")
 	defer span.End()
+	defer func() { finishSpan(ctx, resultErr, "ping failed") }()
 	timer := prometheus.NewTimer(metrics.PingDuration)
 	defer timer.ObserveDuration()
 	_, err := a.muClient.Ping(ctx, &pb.PingRequest{NodeId: a.config.MuNodeID, Version: version})
@@ -176,9 +186,11 @@ func (a *App) ping() error {
 	if err != nil {
 		result = syncFailure
 		metrics.ErrorsTotal.WithLabelValues("ping", "api_error").Inc()
-		tracing.RecordError(ctx, err, "ping failed")
 	}
 	metrics.PingCounter.WithLabelValues(result).Inc()
+	if err == nil {
+		metrics.MarkJobSuccess(metrics.JobPing)
+	}
 	return err
 }
 func (a *App) fetchUsers(ctx context.Context) ([]*pb.User, error) {
@@ -194,14 +206,21 @@ func (a *App) fetchUsers(ctx context.Context) ([]*pb.User, error) {
 	}
 	return response.Users, nil
 }
-func (a *App) syncUser() error {
+func (a *App) syncUser() (resultErr error) {
 	ctx, span := a.tracer.Start(a.ctx, "App.syncUser")
 	defer span.End()
+	defer func() {
+		finishSpan(ctx, resultErr, "user sync failed")
+		if resultErr == nil {
+			metrics.MarkJobSuccess(metrics.JobSyncUser)
+		}
+	}()
 	users, err := a.fetchUsers(ctx)
 	if err != nil {
 		metrics.ErrorsTotal.WithLabelValues("sync_user", "api_error").Inc()
 		return err
 	}
+	span.SetAttributes(attribute.Int("mu.users", len(users)), attribute.Int("sync.backends", len(a.userSync)))
 	metrics.UsersCount.WithLabelValues(a.config.MuNodeID).Set(float64(len(users)))
 	var errs []error
 	for index, syncer := range a.userSync {
@@ -221,6 +240,7 @@ func (a *App) syncUser() error {
 			metrics.ErrorsTotal.WithLabelValues("sync_user", syncType+"_error").Inc()
 			tracing.RecordError(child, err, "backend user sync failed")
 		}
+		childSpan.SetAttributes(attribute.String("sync.result", result))
 		metrics.UserSyncCounter.WithLabelValues(result, syncType).Inc()
 		childSpan.End()
 	}
@@ -235,11 +255,12 @@ func (a *App) syncTraffic() (resultErr error) {
 	timer := prometheus.NewTimer(metrics.TrafficSyncDuration)
 	defer timer.ObserveDuration()
 	defer func() {
-		result := syncSuccess
-		if resultErr != nil {
-			result = syncFailure
+		finishSpan(ctx, resultErr, "traffic sync failed")
+		metrics.TrafficSyncCounter.WithLabelValues(metrics.Result(resultErr)).Inc()
+		a.publishOutbox(span)
+		if resultErr == nil {
+			metrics.MarkJobSuccess(metrics.JobSyncTraffic)
 		}
-		metrics.TrafficSyncCounter.WithLabelValues(result).Inc()
 	}()
 	var errs []error
 	metrics.TrafficLogsUploaded.Set(0)
@@ -257,11 +278,12 @@ func (a *App) syncTraffic() (resultErr error) {
 	for index, syncer := range a.userSync {
 		syncType := syncer.Name()
 		child, childSpan := a.tracer.Start(ctx, "App.syncTraffic."+syncType,
-			trace.WithAttributes(attribute.Int("sync.backend_index", index)),
+			trace.WithAttributes(attribute.String("sync.type", syncType), attribute.Int("sync.backend_index", index)),
 		)
 		child, cancel := context.WithTimeout(child, backendTimeout)
 		logs, err := syncer.GetTraffic(child, users)
 		cancel()
+		childSpan.SetAttributes(attribute.Int("traffic.logs_collected", len(logs)))
 		collected[syncType] += len(logs)
 		metrics.TrafficLogsCollected.WithLabelValues(syncType).Set(float64(collected[syncType]))
 		if err != nil {
@@ -279,9 +301,16 @@ func (a *App) syncTraffic() (resultErr error) {
 	}
 	return errors.Join(errs...)
 }
-func (a *App) flushTraffic(ctx context.Context) error {
+func (a *App) flushTraffic(ctx context.Context) (resultErr error) {
+	ctx, span := a.tracer.Start(ctx, "App.flushTraffic")
+	defer span.End()
+	defer func() { finishSpan(ctx, resultErr, "traffic upload failed") }()
 	ctx, cancel := context.WithTimeout(ctx, backendTimeout)
 	defer cancel()
+	uploadedBatches, uploadedLogs := 0, 0
+	defer func() {
+		span.SetAttributes(attribute.Int("traffic.batches_uploaded", uploadedBatches), attribute.Int("traffic.logs_uploaded", uploadedLogs))
+	}()
 	for {
 		snapshot := a.state.snapshot()
 		if len(snapshot.Pending) == 0 {
@@ -296,6 +325,8 @@ func (a *App) flushTraffic(ctx context.Context) error {
 		if err := a.state.acknowledge(); err != nil {
 			return err
 		}
+		uploadedBatches++
+		uploadedLogs += len(batch.Logs)
 		metrics.TrafficLogsUploaded.Add(float64(len(batch.Logs)))
 		for _, log := range batch.Logs {
 			kind := protocolTrojan
@@ -306,4 +337,16 @@ func (a *App) flushTraffic(ctx context.Context) error {
 			metrics.TotalDownloadBytes.WithLabelValues(kind).Add(float64(log.D))
 		}
 	}
+}
+
+// finishSpan marks the span in ctx as failed when err is non-nil.
+func finishSpan(ctx context.Context, err error, description string) {
+	tracing.RecordError(ctx, err, description)
+}
+
+// publishOutbox exports the size of the durable upload queue as metrics and span attributes.
+func (a *App) publishOutbox(span trace.Span) {
+	batches, logs := a.state.pendingStats()
+	metrics.SetOutbox(batches, logs)
+	span.SetAttributes(attribute.Int("traffic.outbox_batches", batches), attribute.Int("traffic.outbox_logs", logs))
 }

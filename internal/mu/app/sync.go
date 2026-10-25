@@ -15,6 +15,12 @@ const protocolTrojan = "trojan"
 const protocolV2Fly = "v2fly"
 const protocolVLESS = "vless"
 
+// Backend user operation labels for mu_backend_user_operations_total.
+const (
+	operationAdd    = "add"
+	operationRemove = "remove"
+)
+
 // GetTraffic durably queues deltas in the shared state before returning them for metrics.
 // Sync also takes a final snapshot before changing authorization. Neither operation resets counters.
 type UserSync interface {

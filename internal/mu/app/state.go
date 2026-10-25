@@ -190,6 +190,16 @@ func (s *syncState) snapshot() stateData {
 	_ = json.Unmarshal(encoded, &data)
 	return data
 }
+
+// pendingStats returns the queued batch and log counts without cloning the whole state.
+func (s *syncState) pendingStats() (batches, logs int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, batch := range s.data.Pending {
+		logs += len(batch.Logs)
+	}
+	return len(s.data.Pending), logs
+}
 func (s *syncState) prepare(key string, users map[string]managedUser, reset map[string]bool) error {
 	cursors := make(map[string]trafficCursor, len(reset))
 	for id, shouldReset := range reset {

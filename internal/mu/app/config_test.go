@@ -13,7 +13,7 @@ func defaultTracing() tracing.Config {
 	return tracing.Config{
 		Enabled:     false,
 		ServiceName: "mu-service",
-		Endpoint:    "localhost:4317",
+		Exporter:    "otlp",
 		Insecure:    true,
 		SampleRate:  1.0,
 	}
