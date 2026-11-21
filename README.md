@@ -114,6 +114,23 @@ Scrape `http://<host>:9090/metrics`. With an OpenTelemetry Collector, use the `p
 Example alerts: `time() - mu_job_last_success_timestamp_seconds{job="sync_traffic"} > 300` and
 `mu_traffic_outbox_logs > 0` for longer than a few cycles.
 
+### V2Fly metrics
+
+Set `MU_V2FLY_METRICS_ENABLED=true` to collect V2Fly v5 statistics on the existing
+`/metrics` endpoint (default port 9090, requires `MU_METRICS_ENABLED=true`, the default).
+Each scrape reads each unique address in `MU_V2FLY_ADDRS` and `MU_VLESS_ADDRS` over its
+existing gRPC connection with a five-second deadline. Enable StatsService, statistics and the inbound/outbound traffic
+policy flags for the directions you want to monitor.
+
+`v2ray_up{backend}` reports success of the backend scrape. On failure, only health and
+scrape duration are emitted for that backend. Runtime metrics include uptime, goroutines,
+heap and GC statistics. The counters `v2ray_traffic_uplink_bytes_total` and
+`v2ray_traffic_downlink_bytes_total` use `backend` (configured address), `dimension`
+(inbound or outbound) and `target` (proxy tag). Select one dimension when totaling
+traffic. User-level series are excluded. These counters reflect the backend process
+and can reset on restart. The existing `mu_total_*_bytes` metrics track acknowledged
+traffic reports.
+
 ### Traces
 
 Every 60-second cycle produces three traces (`App.ping`, `App.syncTraffic`, `App.syncUser`):

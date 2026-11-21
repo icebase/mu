@@ -21,8 +21,9 @@ type Config struct {
 	VlessInboundTag string
 
 	// Metrics 配置
-	MetricsEnabled bool
-	MetricsPort    string
+	V2FlyMetricsEnabled bool
+	MetricsEnabled      bool
+	MetricsPort         string
 
 	// Tracing 配置
 	Tracing tracing.Config
@@ -37,6 +38,7 @@ type Config struct {
 //   - MU_V2FLY_ADDRS: Comma-separated list of V2Fly addresses
 //   - MU_VLESS_ADDRS: Comma-separated list of V2Fly addresses hosting a VLESS inbound
 //   - MU_VLESS_INBOUND_TAG: Tag of the VLESS inbound (default "vless")
+//   - MU_V2FLY_METRICS_ENABLED: Enable V2Fly backend statistics (disabled by default)
 //   - MU_METRICS_ENABLED / MU_METRICS_PORT: Prometheus endpoint (default true / 9090)
 //   - MU_TRACING_ENABLED, MU_TRACING_EXPORTER, MU_TRACING_ENDPOINT, MU_TRACING_INSECURE,
 //     MU_TRACING_SERVICE_NAME, MU_TRACING_SAMPLE_RATE: OpenTelemetry tracing (disabled by default)
@@ -55,6 +57,7 @@ func ConfigFromEnv() *Config {
 	v.SetDefault("STATE_FILE", "data/mu-state.json")
 
 	// Metrics defaults
+	v.SetDefault("V2FLY_METRICS_ENABLED", false)
 	v.SetDefault("METRICS_ENABLED", true)
 	v.SetDefault("METRICS_PORT", "9090")
 
@@ -77,14 +80,15 @@ func ConfigFromEnv() *Config {
 
 	// Create a config struct with values from environment variables
 	config := &Config{
-		MuAPIBaseURL:    v.GetString("API_BASE_URL"),
-		MuAPIToken:      v.GetString("API_TOKEN"),
-		MuAPIDebug:      v.GetBool("API_DEBUG"),
-		MuNodeID:        v.GetString("NODE_ID"),
-		StateFile:       v.GetString("STATE_FILE"),
-		VlessInboundTag: v.GetString("VLESS_INBOUND_TAG"),
-		MetricsEnabled:  v.GetBool("METRICS_ENABLED"),
-		MetricsPort:     v.GetString("METRICS_PORT"),
+		MuAPIBaseURL:        v.GetString("API_BASE_URL"),
+		MuAPIToken:          v.GetString("API_TOKEN"),
+		MuAPIDebug:          v.GetBool("API_DEBUG"),
+		MuNodeID:            v.GetString("NODE_ID"),
+		StateFile:           v.GetString("STATE_FILE"),
+		VlessInboundTag:     v.GetString("VLESS_INBOUND_TAG"),
+		MetricsEnabled:      v.GetBool("METRICS_ENABLED"),
+		MetricsPort:         v.GetString("METRICS_PORT"),
+		V2FlyMetricsEnabled: v.GetBool("V2FLY_METRICS_ENABLED"),
 		Tracing: tracing.Config{
 			Enabled:     v.GetBool("TRACING_ENABLED"),
 			ServiceName: v.GetString("TRACING_SERVICE_NAME"),
