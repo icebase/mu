@@ -6,6 +6,7 @@ toolchain go1.27.2
 
 require (
 	connectrpc.com/connect v1.21.1
+	github.com/google/uuid v1.6.0
 	github.com/google/wire v0.7.0
 	github.com/p4gefau1t/trojan-go v0.10.6
 	github.com/prometheus/client_golang v1.25.0
@@ -37,7 +38,6 @@ require (
 	github.com/go-sql-driver/mysql v1.10.1 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.32.0 // indirect
 	github.com/miekg/dns v1.1.73 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect

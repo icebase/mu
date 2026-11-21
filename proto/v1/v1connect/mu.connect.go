@@ -23,6 +23,8 @@ const _ = connect.IsAtLeastVersion1_13_0
 const (
 	// MUServiceName is the fully-qualified name of the MUService service.
 	MUServiceName = "v1.MUService"
+	// NodeMetricsServiceName is the fully-qualified name of the NodeMetricsService service.
+	NodeMetricsServiceName = "v1.NodeMetricsService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -40,6 +42,9 @@ const (
 	// MUServiceUploadTrafficLogProcedure is the fully-qualified name of the MUService's
 	// UploadTrafficLog RPC.
 	MUServiceUploadTrafficLogProcedure = "/v1.MUService/UploadTrafficLog"
+	// NodeMetricsServiceReportNodeMetricsProcedure is the fully-qualified name of the
+	// NodeMetricsService's ReportNodeMetrics RPC.
+	NodeMetricsServiceReportNodeMetricsProcedure = "/v1.NodeMetricsService/ReportNodeMetrics"
 )
 
 // MUServiceClient is a client for the v1.MUService service.
@@ -162,4 +167,78 @@ func (UnimplementedMUServiceHandler) GetUsers(context.Context, *connect.Request[
 
 func (UnimplementedMUServiceHandler) UploadTrafficLog(context.Context, *connect.Request[v1.UploadTrafficLogRequest]) (*connect.Response[v1.UploadTrafficLogResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("v1.MUService.UploadTrafficLog is not implemented"))
+}
+
+// NodeMetricsServiceClient is a client for the v1.NodeMetricsService service.
+type NodeMetricsServiceClient interface {
+	// Authenticate the node and durably accept a batch before acknowledging it.
+	// Repeated submissions of the same (node_id, batch_id) succeed without inserting duplicates.
+	ReportNodeMetrics(context.Context, *connect.Request[v1.ReportNodeMetricsRequest]) (*connect.Response[v1.ReportNodeMetricsResponse], error)
+}
+
+// NewNodeMetricsServiceClient constructs a client for the v1.NodeMetricsService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewNodeMetricsServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) NodeMetricsServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	nodeMetricsServiceMethods := v1.File_v1_mu_proto.Services().ByName("NodeMetricsService").Methods()
+	return &nodeMetricsServiceClient{
+		reportNodeMetrics: connect.NewClient[v1.ReportNodeMetricsRequest, v1.ReportNodeMetricsResponse](
+			httpClient,
+			baseURL+NodeMetricsServiceReportNodeMetricsProcedure,
+			connect.WithSchema(nodeMetricsServiceMethods.ByName("ReportNodeMetrics")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// nodeMetricsServiceClient implements NodeMetricsServiceClient.
+type nodeMetricsServiceClient struct {
+	reportNodeMetrics *connect.Client[v1.ReportNodeMetricsRequest, v1.ReportNodeMetricsResponse]
+}
+
+// ReportNodeMetrics calls v1.NodeMetricsService.ReportNodeMetrics.
+func (c *nodeMetricsServiceClient) ReportNodeMetrics(ctx context.Context, req *connect.Request[v1.ReportNodeMetricsRequest]) (*connect.Response[v1.ReportNodeMetricsResponse], error) {
+	return c.reportNodeMetrics.CallUnary(ctx, req)
+}
+
+// NodeMetricsServiceHandler is an implementation of the v1.NodeMetricsService service.
+type NodeMetricsServiceHandler interface {
+	// Authenticate the node and durably accept a batch before acknowledging it.
+	// Repeated submissions of the same (node_id, batch_id) succeed without inserting duplicates.
+	ReportNodeMetrics(context.Context, *connect.Request[v1.ReportNodeMetricsRequest]) (*connect.Response[v1.ReportNodeMetricsResponse], error)
+}
+
+// NewNodeMetricsServiceHandler builds an HTTP handler from the service implementation. It returns
+// the path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewNodeMetricsServiceHandler(svc NodeMetricsServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	nodeMetricsServiceMethods := v1.File_v1_mu_proto.Services().ByName("NodeMetricsService").Methods()
+	nodeMetricsServiceReportNodeMetricsHandler := connect.NewUnaryHandler(
+		NodeMetricsServiceReportNodeMetricsProcedure,
+		svc.ReportNodeMetrics,
+		connect.WithSchema(nodeMetricsServiceMethods.ByName("ReportNodeMetrics")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/v1.NodeMetricsService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case NodeMetricsServiceReportNodeMetricsProcedure:
+			nodeMetricsServiceReportNodeMetricsHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedNodeMetricsServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedNodeMetricsServiceHandler struct{}
+
+func (UnimplementedNodeMetricsServiceHandler) ReportNodeMetrics(context.Context, *connect.Request[v1.ReportNodeMetricsRequest]) (*connect.Response[v1.ReportNodeMetricsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("v1.NodeMetricsService.ReportNodeMetrics is not implemented"))
 }

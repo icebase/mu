@@ -40,6 +40,7 @@ type App struct {
 	tracer         trace.Tracer
 	tracerProvider *sdktrace.TracerProvider
 	metricsServer  *http.Server
+	v2flyBackends  map[string]*v2fly.Manager
 }
 
 func New(config *Config) *App { return &App{config: config} }
@@ -91,6 +92,7 @@ func (a *App) Init() (err error) {
 		a.userSync = append(a.userSync, syncer)
 		v2flyBackends[addr] = syncer.manager
 	}
+	a.v2flyBackends = v2flyBackends
 	return a.initMetrics(v2flyBackends)
 }
 func (a *App) initTracing() error {
@@ -137,7 +139,18 @@ func (a *App) Run() {
 	ctx, stop := signal.NotifyContext(a.ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	a.ctx = ctx
+	var reportingDone chan struct{}
+	if a.config.NodeMetricsReportingEnabled && len(a.v2flyBackends) > 0 {
+		reportingDone = make(chan struct{})
+		go func() {
+			defer close(reportingDone)
+			a.reportNodeMetrics(ctx)
+		}()
+	}
 	a.jobs()
+	if reportingDone != nil {
+		<-reportingDone
+	}
 	if err := a.Close(); err != nil {
 		slog.Error("shutdown failed", "error", err)
 	}
