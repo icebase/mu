@@ -16,6 +16,7 @@ import (
 	"github.com/icebase/mu"
 	"github.com/icebase/mu/internal/mu/app/metrics"
 	"github.com/icebase/mu/internal/mu/app/tracing"
+	"github.com/icebase/mu/pkg/v2fly"
 	pb "github.com/icebase/mu/proto/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -39,6 +40,7 @@ type App struct {
 	tracer         trace.Tracer
 	tracerProvider *sdktrace.TracerProvider
 	metricsServer  *http.Server
+	v2flyBackends  map[string]*v2fly.Manager
 }
 
 func New(config *Config) *App { return &App{config: config} }
@@ -64,9 +66,6 @@ func (a *App) Init() (err error) {
 	if err := a.initTracing(); err != nil {
 		return fmt.Errorf("init tracing: %w", err)
 	}
-	if err := a.initMetrics(); err != nil {
-		return fmt.Errorf("init metrics: %w", err)
-	}
 	a.muClient = mu.NewClient(a.config.MuAPIBaseURL, a.config.MuAPIToken, a.config.MuNodeID,
 		mu.WithAPIDebug(a.config.MuAPIDebug), mu.WithRequestObserver(metrics.ObserveAPIRequest))
 	for _, addr := range a.config.TrojanAddrs {
@@ -76,12 +75,14 @@ func (a *App) Init() (err error) {
 		}
 		a.userSync = append(a.userSync, syncer)
 	}
+	v2flyBackends := make(map[string]*v2fly.Manager)
 	for _, addr := range a.config.V2flyAddrs {
 		syncer, err := newV2flySync(addr, a.state)
 		if err != nil {
 			return err
 		}
 		a.userSync = append(a.userSync, syncer)
+		v2flyBackends[addr] = syncer.manager
 	}
 	for _, addr := range a.config.VlessAddrs {
 		syncer, err := newVlessSync(addr, a.config.VlessInboundTag, a.state)
@@ -89,8 +90,10 @@ func (a *App) Init() (err error) {
 			return err
 		}
 		a.userSync = append(a.userSync, syncer)
+		v2flyBackends[addr] = syncer.manager
 	}
-	return nil
+	a.v2flyBackends = v2flyBackends
+	return a.initMetrics(v2flyBackends)
 }
 func (a *App) initTracing() error {
 	cfg := a.config.Tracing
@@ -107,13 +110,23 @@ func (a *App) initTracing() error {
 	}
 	return nil
 }
-func (a *App) initMetrics() error {
+func (a *App) initMetrics(backends map[string]*v2fly.Manager) error {
 	metrics.BuildInfo.WithLabelValues(version, runtime.Version()).Set(1)
 	if !a.config.MetricsEnabled {
 		return nil
 	}
+	registry := prometheus.NewRegistry()
+	if a.config.V2FlyMetricsEnabled {
+		for addr, manager := range backends {
+			registerer := prometheus.WrapRegistererWith(prometheus.Labels{"backend": addr}, registry)
+			if err := registerer.Register(metrics.NewV2FlyCollector(a.ctx, manager.ReadNodeStats)); err != nil {
+				return fmt.Errorf("register V2Fly metrics: %w", err)
+			}
+		}
+	}
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.Handler())
+	handler := promhttp.HandlerFor(prometheus.Gatherers{prometheus.DefaultGatherer, registry}, promhttp.HandlerOpts{})
+	mux.Handle("/metrics", promhttp.InstrumentMetricHandler(prometheus.DefaultRegisterer, handler))
 	a.metricsServer = &http.Server{Addr: ":" + a.config.MetricsPort, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		if err := a.metricsServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -126,7 +139,18 @@ func (a *App) Run() {
 	ctx, stop := signal.NotifyContext(a.ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	a.ctx = ctx
+	var reportingDone chan struct{}
+	if a.config.NodeMetricsReportingEnabled && len(a.v2flyBackends) > 0 {
+		reportingDone = make(chan struct{})
+		go func() {
+			defer close(reportingDone)
+			a.reportNodeMetrics(ctx)
+		}()
+	}
 	a.jobs()
+	if reportingDone != nil {
+		<-reportingDone
+	}
 	if err := a.Close(); err != nil {
 		slog.Error("shutdown failed", "error", err)
 	}

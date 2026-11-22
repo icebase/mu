@@ -114,6 +114,40 @@ Scrape `http://<host>:9090/metrics`. With an OpenTelemetry Collector, use the `p
 Example alerts: `time() - mu_job_last_success_timestamp_seconds{job="sync_traffic"} > 300` and
 `mu_traffic_outbox_logs > 0` for longer than a few cycles.
 
+### V2Fly metrics
+
+Set `MU_V2FLY_METRICS_ENABLED=true` to collect V2Fly v5 statistics on the existing
+`/metrics` endpoint (default port 9090, requires `MU_METRICS_ENABLED=true`, the default).
+Each scrape reads each unique address in `MU_V2FLY_ADDRS` and `MU_VLESS_ADDRS` over its
+existing gRPC connection with a five-second deadline. Enable StatsService, statistics and the inbound/outbound traffic
+policy flags for the directions you want to monitor.
+
+`v2ray_up{backend}` reports success of the backend scrape. On failure, only health and
+scrape duration are emitted for that backend. Runtime metrics include uptime, goroutines,
+heap and GC statistics. The counters `v2ray_traffic_uplink_bytes_total` and
+`v2ray_traffic_downlink_bytes_total` use `backend` (configured address), `dimension`
+(inbound or outbound) and `target` (proxy tag). Select one dimension when totaling
+traffic. User-level series are excluded. These counters reflect the backend process
+and can reset on restart. The existing `mu_total_*_bytes` metrics track acknowledged
+traffic reports.
+
+### Report V2Fly metrics to MU Server
+
+Set `MU_NODE_METRICS_REPORTING_ENABLED=true` to send V2Fly backend metrics to
+`MU_API_BASE_URL` starting at launch and then every minute. This option is disabled by default.
+Use `MU_METRICS_ENABLED=false` to run without a Prometheus endpoint. Reporting uses the
+same V2Fly stats and policy settings as the scrape endpoint, plus the existing MU API token.
+
+The MU Server must mount the generated Twirp handler for `NodeMetricsService` at
+`/v1.NodeMetricsService/` (empty Twirp path prefix). It should authorize the token for the
+submitted `node_id`, validate the batch and enforce uniqueness of `(node_id, batch_id)`.
+A duplicate of an already accepted batch should return success. Acknowledge after persisting the
+batch. Each backend sample contains a timestamp and collection status. Successful samples
+also carry runtime statistics and cumulative byte counters by proxy tag.
+
+The agent retries transient upload failures once using the same batch ID. Batches are kept
+in memory for the attempt and retry, so an outage can leave gaps in the metric history.
+
 ### Traces
 
 Every 60-second cycle produces three traces (`App.ping`, `App.syncTraffic`, `App.syncUser`):

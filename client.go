@@ -27,6 +27,7 @@ type Client struct {
 	addr, token string
 	nodeID      string
 	client      pb.MUService
+	nodeMetrics pb.NodeMetricsService
 	apiDebug    bool
 	observer    RequestObserver
 }
@@ -55,12 +56,14 @@ func NewClient(addr string, token string, nodeID string, options ...ClientOption
 	for _, option := range options {
 		option(c)
 	}
-	c.client = pb.NewMUServiceJSONClient(addr, &diagnosticHTTPClient{
+	httpClient := &diagnosticHTTPClient{
 		client: &http.Client{
 			Timeout:       10 * time.Second,
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 		},
-	}, twirp.WithClientPathPrefix(""))
+	}
+	c.client = pb.NewMUServiceJSONClient(addr, httpClient, twirp.WithClientPathPrefix(""))
+	c.nodeMetrics = pb.NewNodeMetricsServiceJSONClient(addr, httpClient, twirp.WithClientPathPrefix(""))
 	return c
 }
 

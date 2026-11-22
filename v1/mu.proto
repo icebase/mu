@@ -2,6 +2,7 @@ syntax = "proto3";
 package v1;
 
 // import "validate/validate.proto";
+import "v1/node_metrics.proto";
 
 option go_package = "github.com/icebase/mu/proto/v1";
 
@@ -9,6 +10,12 @@ service MUService {
     rpc Ping(PingRequest) returns (PingResponse) {}
     rpc GetUsers(GetUsersRequest) returns (GetUsersResponse) {}
     rpc UploadTrafficLog(UploadTrafficLogRequest) returns (UploadTrafficLogResponse) {}
+}
+
+service NodeMetricsService {
+    // Authenticate the node and durably accept a batch before acknowledging it.
+    // Repeated submissions of the same (node_id, batch_id) succeed without inserting duplicates.
+    rpc ReportNodeMetrics(ReportNodeMetricsRequest) returns (ReportNodeMetricsResponse) {}
 }
 
 message GetUsersRequest {
