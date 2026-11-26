@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/icebase/mu/pkg/ss"
-	"github.com/sagernet/sing-shadowsocks"
+	shadowsocks "github.com/sagernet/sing-shadowsocks"
 	"github.com/sagernet/sing-shadowsocks/shadowaead_2022"
 	M "github.com/sagernet/sing/common/metadata"
 )
