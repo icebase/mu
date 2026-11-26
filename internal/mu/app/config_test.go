@@ -29,6 +29,8 @@ func TestConfigFromEnv(t *testing.T) {
 		"MU_V2FLY_ADDRS":       os.Getenv("MU_V2FLY_ADDRS"),
 		"MU_VLESS_ADDRS":       os.Getenv("MU_VLESS_ADDRS"),
 		"MU_VLESS_INBOUND_TAG": os.Getenv("MU_VLESS_INBOUND_TAG"),
+		"MU_SS_ADDRS":          os.Getenv("MU_SS_ADDRS"),
+		"MU_SS_API_TOKEN":      os.Getenv("MU_SS_API_TOKEN"),
 	}
 
 	// Restore environment variables after test
@@ -57,6 +59,8 @@ func TestConfigFromEnv(t *testing.T) {
 				"MU_V2FLY_ADDRS":       "",
 				"MU_VLESS_ADDRS":       "",
 				"MU_VLESS_INBOUND_TAG": "",
+				"MU_SS_ADDRS":          "",
+				"MU_SS_API_TOKEN":      "",
 			},
 			expected: &Config{
 				MuAPIBaseURL:    "",
@@ -81,6 +85,8 @@ func TestConfigFromEnv(t *testing.T) {
 				"MU_V2FLY_ADDRS":       "v2fly1.example.com,v2fly2.example.com",
 				"MU_VLESS_ADDRS":       "vless1.example.com, vless2.example.com,vless1.example.com",
 				"MU_VLESS_INBOUND_TAG": "edge-vless",
+				"MU_SS_ADDRS":          "ss1.example.com:9091, ss2.example.com:9091,ss1.example.com:9091",
+				"MU_SS_API_TOKEN":      "ss-secret",
 			},
 			expected: &Config{
 				MuAPIBaseURL:    "https://api.example.com",
@@ -91,6 +97,8 @@ func TestConfigFromEnv(t *testing.T) {
 				V2flyAddrs:      []string{"v2fly1.example.com", "v2fly2.example.com"},
 				VlessAddrs:      []string{"vless1.example.com", "vless2.example.com"},
 				VlessInboundTag: "edge-vless",
+				SSAddrs:         []string{"ss1.example.com:9091", "ss2.example.com:9091"},
+				SSAPIToken:      "ss-secret",
 				MetricsEnabled:  true,
 				MetricsPort:     "9090",
 				Tracing:         defaultTracing(),
@@ -106,6 +114,8 @@ func TestConfigFromEnv(t *testing.T) {
 				"MU_V2FLY_ADDRS":       "v2fly.example.com",
 				"MU_VLESS_ADDRS":       "",
 				"MU_VLESS_INBOUND_TAG": "",
+				"MU_SS_ADDRS":          "",
+				"MU_SS_API_TOKEN":      "",
 			},
 			expected: &Config{
 				MuAPIBaseURL:    "https://api.example.com",

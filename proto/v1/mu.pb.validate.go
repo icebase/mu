@@ -619,6 +619,106 @@ var _ interface {
 	ErrorName() string
 } = VUserValidationError{}
 
+// Validate checks the field values on SSUser with the rules defined in the
+// proto definition for this message. If any rules are violated, the first
+// error encountered is returned, or nil if there are no violations.
+func (m *SSUser) Validate() error {
+	return m.validate(false)
+}
+
+// ValidateAll checks the field values on SSUser with the rules defined in the
+// proto definition for this message. If any rules are violated, the result is
+// a list of violation errors wrapped in SSUserMultiError, or nil if none found.
+func (m *SSUser) ValidateAll() error {
+	return m.validate(true)
+}
+
+func (m *SSUser) validate(all bool) error {
+	if m == nil {
+		return nil
+	}
+
+	var errors []error
+
+	// no validation rules for Psk
+
+	if len(errors) > 0 {
+		return SSUserMultiError(errors)
+	}
+
+	return nil
+}
+
+// SSUserMultiError is an error wrapping multiple validation errors returned by
+// SSUser.ValidateAll() if the designated constraints aren't met.
+type SSUserMultiError []error
+
+// Error returns a concatenation of all the error messages it wraps.
+func (m SSUserMultiError) Error() string {
+	msgs := make([]string, 0, len(m))
+	for _, err := range m {
+		msgs = append(msgs, err.Error())
+	}
+	return strings.Join(msgs, "; ")
+}
+
+// AllErrors returns a list of validation violation errors.
+func (m SSUserMultiError) AllErrors() []error { return m }
+
+// SSUserValidationError is the validation error returned by SSUser.Validate if
+// the designated constraints aren't met.
+type SSUserValidationError struct {
+	field  string
+	reason string
+	cause  error
+	key    bool
+}
+
+// Field function returns field value.
+func (e SSUserValidationError) Field() string { return e.field }
+
+// Reason function returns reason value.
+func (e SSUserValidationError) Reason() string { return e.reason }
+
+// Cause function returns cause value.
+func (e SSUserValidationError) Cause() error { return e.cause }
+
+// Key function returns key value.
+func (e SSUserValidationError) Key() bool { return e.key }
+
+// ErrorName returns error name.
+func (e SSUserValidationError) ErrorName() string { return "SSUserValidationError" }
+
+// Error satisfies the builtin error interface
+func (e SSUserValidationError) Error() string {
+	cause := ""
+	if e.cause != nil {
+		cause = fmt.Sprintf(" | caused by: %v", e.cause)
+	}
+
+	key := ""
+	if e.key {
+		key = "key for "
+	}
+
+	return fmt.Sprintf(
+		"invalid %sSSUser.%s: %s%s",
+		key,
+		e.field,
+		e.reason,
+		cause)
+}
+
+var _ error = SSUserValidationError{}
+
+var _ interface {
+	Field() string
+	Reason() string
+	Key() bool
+	Cause() error
+	ErrorName() string
+} = SSUserValidationError{}
+
 // Validate checks the field values on User with the rules defined in the proto
 // definition for this message. If any rules are violated, the first error
 // encountered is returned, or nil if there are no violations.
@@ -679,6 +779,35 @@ func (m *User) validate(all bool) error {
 		if err := v.Validate(); err != nil {
 			return UserValidationError{
 				field:  "V2RayUser",
+				reason: "embedded message failed validation",
+				cause:  err,
+			}
+		}
+	}
+
+	if all {
+		switch v := interface{}(m.GetSsUser()).(type) {
+		case interface{ ValidateAll() error }:
+			if err := v.ValidateAll(); err != nil {
+				errors = append(errors, UserValidationError{
+					field:  "SsUser",
+					reason: "embedded message failed validation",
+					cause:  err,
+				})
+			}
+		case interface{ Validate() error }:
+			if err := v.Validate(); err != nil {
+				errors = append(errors, UserValidationError{
+					field:  "SsUser",
+					reason: "embedded message failed validation",
+					cause:  err,
+				})
+			}
+		}
+	} else if v, ok := interface{}(m.GetSsUser()).(interface{ Validate() error }); ok {
+		if err := v.Validate(); err != nil {
+			return UserValidationError{
+				field:  "SsUser",
 				reason: "embedded message failed validation",
 				cause:  err,
 			}

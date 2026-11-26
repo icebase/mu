@@ -34,6 +34,8 @@ Configuration is done via environment variables. The following environment varia
 | `MU_V2FLY_ADDRS` | Comma-separated list of V2Fly server addresses (VMess inbound, tag `proxy`) | `v2fly1.example.com,v2fly2.example.com` |
 | `MU_VLESS_ADDRS` | Comma-separated list of V2Fly server addresses with a VLESS inbound | `vless1.example.com,vless2.example.com` |
 | `MU_VLESS_INBOUND_TAG` | Tag of the VLESS inbound on those servers (default `vless`) | `vless` |
+| `MU_SS_ADDRS` | Comma-separated list of `ss-server` management gRPC addresses | `127.0.0.1:9091` |
+| `MU_SS_API_TOKEN` | Shared token for the `ss-server` management API; required when `MU_SS_ADDRS` is set | `change-me` |
 | `MU_METRICS_ENABLED` | Serve Prometheus metrics at `/metrics` (default `true`) | `true` |
 | `MU_METRICS_PORT` | Metrics listen port, all interfaces (default `9090`) | `9090` |
 | `MU_TRACING_ENABLED` | Enable OpenTelemetry tracing (default `false`) | `true` |
@@ -101,7 +103,7 @@ Scrape `http://<host>:9090/metrics`. With an OpenTelemetry Collector, use the `p
 | `mu_api_requests_total` | counter | `rpc`, `status`, `code` | MU API outcomes per RPC; `code` is the Twirp error code (transport failures appear as `internal`) |
 | `mu_api_request_duration_seconds` | histogram | `rpc` | MU API latency per RPC |
 | `mu_ping_total`, `mu_ping_duration_seconds` | counter, histogram | `status` | Ping job |
-| `mu_user_sync_total`, `mu_user_sync_duration_seconds` | counter, histogram | `status`, `sync_type` | Per-protocol user sync (`trojan`, `v2fly`, `vless`) |
+| `mu_user_sync_total`, `mu_user_sync_duration_seconds` | counter, histogram | `status`, `sync_type` | Per-protocol user sync (`trojan`, `v2fly`, `vless`, `shadowsocks`) |
 | `mu_traffic_sync_total`, `mu_traffic_sync_duration_seconds` | counter, histogram | `status` | Traffic collection + upload cycle |
 | `mu_job_last_success_timestamp_seconds` | gauge | `job` (`ping`, `sync_user`, `sync_traffic`) | Staleness alerts |
 | `mu_traffic_outbox_batches`, `mu_traffic_outbox_logs` | gauge | – | Durable upload queue size; keeps growing while the API is unreachable |
@@ -205,6 +207,60 @@ service:
     traces:  { receivers: [otlp], exporters: [debug] }
     metrics: { receivers: [prometheus], exporters: [debug] }
 ```
+
+## Shadowsocks 2022 multi-user server (`ss-server`)
+
+`ss-server` is a Shadowsocks 2022 / SIP023 server that serves many users on one TCP+UDP port.
+Each user has an individual key (uPSK); the server has one node key (iPSK). Clients (for example Mihomo) use the
+password `SERVER_PSK:USER_PSK` with cipher `2022-blake3-aes-128-gcm` or `2022-blake3-aes-256-gcm`.
+mu keeps its users in sync through the management gRPC API (`SSManagerService`) and reports their traffic.
+
+```bash
+make build-ss-server   # bin/ss-server
+```
+
+### Docker image and Compose
+
+`ss-server` ships as its own image, `ghcr.io/icebase/mu-ss-server` (built from `Dockerfile.ss-server` by the
+Docker workflow next to `ghcr.io/icebase/mu`). [`docker-compose.ss-server.yml`](docker-compose.ss-server.yml) runs both
+together: mu reaches the management API at `ss-server:9091` over the compose network, so only the proxy port is published.
+
+```bash
+export SS_SERVER_PSK="$(openssl rand -base64 16)"   # 32 bytes for 2022-blake3-aes-256-gcm
+export SS_API_TOKEN="$(openssl rand -hex 24)"       # used by both services
+docker compose -f docker-compose.ss-server.yml up -d
+```
+
+Publish `8388` for both TCP and UDP. Do not publish `9091` (management) or `9092` (metrics) to untrusted networks.
+To build locally: `docker build -f Dockerfile.ss-server -t mu-ss-server .`
+
+| Environment Variable | Description | Default |
+|----------|------|------|
+| `SS_LISTEN_ADDR` | Proxy listen address (TCP and UDP) | `:8388` |
+| `SS_METHOD` | `2022-blake3-aes-128-gcm` or `2022-blake3-aes-256-gcm` | `2022-blake3-aes-128-gcm` |
+| `SS_SERVER_PSK` / `SS_SERVER_PSK_FILE` | Base64 iPSK (16 bytes for AES-128, 32 for AES-256), inline or from a file | required |
+| `SS_API_ADDR` | Management gRPC listen address; keep it on a private interface | `127.0.0.1:9091` |
+| `SS_API_TOKEN` | Token mu must send; equals mu's `MU_SS_API_TOKEN` | required |
+| `SS_UDP_ENABLED` / `SS_UDP_TIMEOUT` | UDP relay and idle timeout | `true` / `5m` |
+| `SS_ALLOW_PRIVATE_NETWORK` | Allow relaying to loopback, private, link-local and CGNAT addresses | `false` |
+| `SS_METRICS_ENABLED` / `SS_METRICS_PORT` | Prometheus metrics | `true` / `9092` |
+
+Generate keys with `openssl rand -base64 16` (or `32` for AES-256).
+
+How users reach the server: the MU API returns `User.ss_user.psk` (base64 uPSK, same length as the server key).
+Accounts without `ss_user` are ignored by the Shadowsocks backend, and accounts without `v2ray_user` are ignored by
+Trojan and V2Fly. mu names each Shadowsocks user after `User.id`, so keys never act as identifiers.
+
+Behavior to know about:
+
+- Disabling or removing a user, or rotating its key, terminates that user's active TCP and UDP sessions.
+- Traffic is the decrypted payload: upload is client to destination, download the reverse. Counters live in
+  memory and restart at zero with the process; mu treats a counter drop as a new epoch, so traffic accrued since
+  its last collection before a restart is not reported.
+- After an `ss-server` restart it has no users until mu's next sync (up to 60 seconds); users are then re-installed.
+- Unknown keys, replayed handshakes and forbidden destinations are dropped without reply or billing.
+- Two users cannot share a key; the server rejects the second one.
+- Metrics are aggregate (`ss_server_*`) to keep cardinality independent of the user count.
 
 ## Docker Compose
 

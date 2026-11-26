@@ -1,0 +1,51 @@
+# mu + ss-server (Shadowsocks 2022 multi-user).
+#
+#   export SS_SERVER_PSK="$(openssl rand -base64 16)"   # 32 bytes for 2022-blake3-aes-256-gcm
+#   export SS_API_TOKEN="$(openssl rand -hex 24)"
+#   docker compose -f docker-compose.ss-server.yml up -d
+#
+# Clients connect to <host>:8388 with password "<SS_SERVER_PSK>:<user psk>" and cipher 2022-blake3-aes-128-gcm.
+# The management API (9091) and metrics (9092) are only reachable on the compose network, not published.
+
+services:
+  ss-server:
+    image: ghcr.io/icebase/mu-ss-server:latest
+    container_name: ss-server
+    restart: unless-stopped
+    ports:
+      - "8388:8388/tcp"
+      - "8388:8388/udp"
+    environment:
+      SS_LISTEN_ADDR: ":8388"
+      SS_METHOD: "2022-blake3-aes-128-gcm"
+      SS_SERVER_PSK: "${SS_SERVER_PSK:?set SS_SERVER_PSK, e.g. openssl rand -base64 16}"
+      # Listen on all interfaces so mu can reach it from its own container.
+      SS_API_ADDR: "0.0.0.0:9091"
+      SS_API_TOKEN: "${SS_API_TOKEN:?set SS_API_TOKEN, e.g. openssl rand -hex 24}"
+    networks:
+      - mu-network
+
+  mu:
+    image: ghcr.io/icebase/mu:latest
+    container_name: mu
+    restart: unless-stopped
+    depends_on:
+      - ss-server
+    environment:
+      MU_API_BASE_URL: "https://api.example.com"
+      MU_API_TOKEN: "your-api-token"
+      MU_NODE_ID: "node-1"
+      MU_STATE_FILE: "/var/lib/mu/state.json"
+      MU_SS_ADDRS: "ss-server:9091"
+      MU_SS_API_TOKEN: "${SS_API_TOKEN:?set SS_API_TOKEN}"
+    volumes:
+      - mu-state:/var/lib/mu
+    networks:
+      - mu-network
+
+volumes:
+  mu-state:
+
+networks:
+  mu-network:
+    driver: bridge

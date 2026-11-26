@@ -13,6 +13,7 @@ import (
 
 const protocolTrojan = "trojan"
 const protocolV2Fly = "v2fly"
+const protocolSS = "shadowsocks"
 const protocolVLESS = "vless"
 
 // Backend user operation labels for mu_backend_user_operations_total.
@@ -30,12 +31,19 @@ type UserSync interface {
 }
 
 func desiredUsers(users []*pb.User, protocol string) (map[string]managedUser, map[string]managedUser, error) {
+	if protocol == protocolSS {
+		return desiredSSUsers(users)
+	}
 	all := make(map[string]managedUser)
 	enabled := make(map[string]managedUser)
 	uuids := make(map[string]bool)
 	emails := make(map[string]bool)
 	for index, user := range users {
 		// Reject the whole snapshot before removals; silently dropping malformed users could revoke valid accounts.
+		// Shadowsocks-only accounts carry no V2Ray identity and are simply absent from these backends.
+		if user != nil && user.V2RayUser == nil && user.SsUser != nil && (user.Enable == 0 || user.Enable == 1) {
+			continue
+		}
 		if user == nil || user.V2RayUser == nil || strings.TrimSpace(user.V2RayUser.Uuid) == "" || (user.Enable != 0 && user.Enable != 1) {
 			return nil, nil, fmt.Errorf("invalid user record at index %d", index)
 		}

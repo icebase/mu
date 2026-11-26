@@ -19,6 +19,8 @@ type Config struct {
 	VlessAddrs  []string
 	// VlessInboundTag is the V2Ray inbound tag of the VLESS inbound (default "vless").
 	VlessInboundTag string
+	SSAddrs         []string
+	SSAPIToken      string
 
 	// Metrics 配置
 	NodeMetricsReportingEnabled bool
@@ -44,6 +46,8 @@ type Config struct {
 //   - MU_METRICS_ENABLED / MU_METRICS_PORT: Prometheus endpoint (default true / 9090)
 //   - MU_TRACING_ENABLED, MU_TRACING_EXPORTER, MU_TRACING_ENDPOINT, MU_TRACING_INSECURE,
 //     MU_TRACING_SERVICE_NAME, MU_TRACING_SAMPLE_RATE: OpenTelemetry tracing (disabled by default)
+//   - MU_SS_ADDRS: Comma-separated list of ss-server management gRPC addresses
+//   - MU_SS_API_TOKEN: Shared token for the ss-server management API
 func ConfigFromEnv() *Config {
 	v := viper.New()
 
@@ -56,6 +60,8 @@ func ConfigFromEnv() *Config {
 	v.SetDefault("V2FLY_ADDRS", "")
 	v.SetDefault("VLESS_ADDRS", "")
 	v.SetDefault("VLESS_INBOUND_TAG", "vless")
+	v.SetDefault("SS_ADDRS", "")
+	v.SetDefault("SS_API_TOKEN", "")
 	v.SetDefault("STATE_FILE", "data/mu-state.json")
 
 	// Metrics defaults
@@ -89,6 +95,7 @@ func ConfigFromEnv() *Config {
 		MuNodeID:                    v.GetString("NODE_ID"),
 		StateFile:                   v.GetString("STATE_FILE"),
 		VlessInboundTag:             v.GetString("VLESS_INBOUND_TAG"),
+		SSAPIToken:                  v.GetString("SS_API_TOKEN"),
 		MetricsEnabled:              v.GetBool("METRICS_ENABLED"),
 		MetricsPort:                 v.GetString("METRICS_PORT"),
 		NodeMetricsReportingEnabled: v.GetBool("NODE_METRICS_REPORTING_ENABLED"),
@@ -114,6 +121,10 @@ func ConfigFromEnv() *Config {
 
 	if vlessAddrsStr := v.GetString("VLESS_ADDRS"); vlessAddrsStr != "" {
 		config.VlessAddrs = parseAddresses(vlessAddrsStr)
+	}
+
+	if ssAddrsStr := v.GetString("SS_ADDRS"); ssAddrsStr != "" {
+		config.SSAddrs = parseAddresses(ssAddrsStr)
 	}
 
 	return config

@@ -38,7 +38,9 @@ func validateState(data stateData) error {
 			if count > maxPendingLogs || log == nil || log.Uuid == "" || log.U < 0 || log.D < 0 {
 				return invalid
 			}
-			if log.TrafficType != int32(pb.TrafficType_TRAFFIC_TYPE_TROJAN) && log.TrafficType != int32(pb.TrafficType_TRAFFIC_TYPE_V2FLY) {
+			if log.TrafficType != int32(pb.TrafficType_TRAFFIC_TYPE_TROJAN) &&
+				log.TrafficType != int32(pb.TrafficType_TRAFFIC_TYPE_V2FLY) &&
+				log.TrafficType != int32(pb.TrafficType_TRAFFIC_TYPE_SHADOWSOCKS) {
 				return invalid
 			}
 		}
