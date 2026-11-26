@@ -103,7 +103,7 @@ Scrape `http://<host>:9090/metrics`. With an OpenTelemetry Collector, use the `p
 | `mu_api_requests_total` | counter | `rpc`, `status`, `code` | MU API outcomes per RPC; `code` is the Twirp error code (transport failures appear as `internal`) |
 | `mu_api_request_duration_seconds` | histogram | `rpc` | MU API latency per RPC |
 | `mu_ping_total`, `mu_ping_duration_seconds` | counter, histogram | `status` | Ping job |
-| `mu_user_sync_total`, `mu_user_sync_duration_seconds` | counter, histogram | `status`, `sync_type` | Per-protocol user sync (`trojan`, `v2fly`, `vless`) |
+| `mu_user_sync_total`, `mu_user_sync_duration_seconds` | counter, histogram | `status`, `sync_type` | Per-protocol user sync (`trojan`, `v2fly`, `vless`, `shadowsocks`) |
 | `mu_traffic_sync_total`, `mu_traffic_sync_duration_seconds` | counter, histogram | `status` | Traffic collection + upload cycle |
 | `mu_job_last_success_timestamp_seconds` | gauge | `job` (`ping`, `sync_user`, `sync_traffic`) | Staleness alerts |
 | `mu_traffic_outbox_batches`, `mu_traffic_outbox_logs` | gauge | – | Durable upload queue size; keeps growing while the API is unreachable |
