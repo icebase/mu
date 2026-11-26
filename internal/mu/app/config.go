@@ -15,6 +15,8 @@ type Config struct {
 
 	TrojanAddrs []string
 	V2flyAddrs  []string
+	SSAddrs     []string
+	SSAPIToken  string
 
 	// Metrics 配置
 	MetricsEnabled bool
@@ -31,6 +33,8 @@ type Config struct {
 // - MU_NODE_ID: Node identifier
 // - MU_TROJAN_ADDRS: Comma-separated list of Trojan addresses
 // - MU_V2FLY_ADDRS: Comma-separated list of V2Fly addresses
+// - MU_SS_ADDRS: Comma-separated list of ss-server management gRPC addresses
+// - MU_SS_API_TOKEN: Shared token for the ss-server management API
 func ConfigFromEnv() *Config {
 	v := viper.New()
 
@@ -40,6 +44,8 @@ func ConfigFromEnv() *Config {
 	v.SetDefault("NODE_ID", "")
 	v.SetDefault("TROJAN_ADDRS", "")
 	v.SetDefault("V2FLY_ADDRS", "")
+	v.SetDefault("SS_ADDRS", "")
+	v.SetDefault("SS_API_TOKEN", "")
 	v.SetDefault("STATE_FILE", "data/mu-state.json")
 
 	// Metrics defaults
@@ -68,6 +74,7 @@ func ConfigFromEnv() *Config {
 		MuAPIToken:     v.GetString("API_TOKEN"),
 		MuNodeID:       v.GetString("NODE_ID"),
 		StateFile:      v.GetString("STATE_FILE"),
+		SSAPIToken:     v.GetString("SS_API_TOKEN"),
 		MetricsEnabled: v.GetBool("METRICS_ENABLED"),
 		MetricsPort:    v.GetString("METRICS_PORT"),
 		Tracing: tracing.Config{
@@ -86,6 +93,10 @@ func ConfigFromEnv() *Config {
 
 	if v2flyAddrsStr := v.GetString("V2FLY_ADDRS"); v2flyAddrsStr != "" {
 		config.V2flyAddrs = parseAddresses(v2flyAddrsStr)
+	}
+
+	if ssAddrsStr := v.GetString("SS_ADDRS"); ssAddrsStr != "" {
+		config.SSAddrs = parseAddresses(ssAddrsStr)
 	}
 
 	return config

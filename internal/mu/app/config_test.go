@@ -27,6 +27,8 @@ func TestConfigFromEnv(t *testing.T) {
 		"MU_NODE_ID":      os.Getenv("MU_NODE_ID"),
 		"MU_TROJAN_ADDRS": os.Getenv("MU_TROJAN_ADDRS"),
 		"MU_V2FLY_ADDRS":  os.Getenv("MU_V2FLY_ADDRS"),
+		"MU_SS_ADDRS":     os.Getenv("MU_SS_ADDRS"),
+		"MU_SS_API_TOKEN": os.Getenv("MU_SS_API_TOKEN"),
 	}
 
 	// Restore environment variables after test
@@ -53,6 +55,8 @@ func TestConfigFromEnv(t *testing.T) {
 				"MU_NODE_ID":      "",
 				"MU_TROJAN_ADDRS": "",
 				"MU_V2FLY_ADDRS":  "",
+				"MU_SS_ADDRS":     "",
+				"MU_SS_API_TOKEN": "",
 			},
 			expected: &Config{
 				MuAPIBaseURL:   "",
@@ -74,6 +78,8 @@ func TestConfigFromEnv(t *testing.T) {
 				"MU_NODE_ID":      "node-1",
 				"MU_TROJAN_ADDRS": "trojan1.example.com,trojan2.example.com",
 				"MU_V2FLY_ADDRS":  "v2fly1.example.com,v2fly2.example.com",
+				"MU_SS_ADDRS":     "ss1.example.com:9091, ss2.example.com:9091,ss1.example.com:9091",
+				"MU_SS_API_TOKEN": "ss-secret",
 			},
 			expected: &Config{
 				MuAPIBaseURL:   "https://api.example.com",
@@ -82,6 +88,8 @@ func TestConfigFromEnv(t *testing.T) {
 				StateFile:      "data/mu-state.json",
 				TrojanAddrs:    []string{"trojan1.example.com", "trojan2.example.com"},
 				V2flyAddrs:     []string{"v2fly1.example.com", "v2fly2.example.com"},
+				SSAddrs:        []string{"ss1.example.com:9091", "ss2.example.com:9091"},
+				SSAPIToken:     "ss-secret",
 				MetricsEnabled: true,
 				MetricsPort:    "9090",
 				Tracing:        defaultTracing(),
@@ -95,6 +103,8 @@ func TestConfigFromEnv(t *testing.T) {
 				"MU_NODE_ID":      "node-2",
 				"MU_TROJAN_ADDRS": "",
 				"MU_V2FLY_ADDRS":  "v2fly.example.com",
+				"MU_SS_ADDRS":     "",
+				"MU_SS_API_TOKEN": "",
 			},
 			expected: &Config{
 				MuAPIBaseURL:   "https://api.example.com",

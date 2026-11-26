@@ -23,6 +23,7 @@ type managedUser struct {
 	ID             int64
 	UUID, Email    string
 	Level, AlterID uint32
+	PSK            string // Shadowsocks 2022 uPSK; empty for other protocols.
 }
 
 func (u managedUser) v2User() *v2flyUser {

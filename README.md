@@ -31,6 +31,8 @@ Configuration is done via environment variables. The following environment varia
 | `MU_STATE_FILE` | Private persistent state file (default `data/mu-state.json`) | `/var/lib/mu/state.json` |
 | `MU_TROJAN_ADDRS` | Comma-separated list of Trojan server addresses | `trojan1.example.com,trojan2.example.com` |
 | `MU_V2FLY_ADDRS` | Comma-separated list of V2Fly server addresses | `v2fly1.example.com,v2fly2.example.com` |
+| `MU_SS_ADDRS` | Comma-separated list of `ss-server` management gRPC addresses | `127.0.0.1:9091` |
+| `MU_SS_API_TOKEN` | Shared token for the `ss-server` management API; required when `MU_SS_ADDRS` is set | `change-me` |
 
 ### Configuration Example
 
@@ -47,6 +49,45 @@ export MU_TROJAN_ADDRS="trojan1.example.com,trojan2.example.com"
 # Set V2Fly server addresses
 export MU_V2FLY_ADDRS="v2fly1.example.com,v2fly2.example.com"
 ```
+
+## Shadowsocks 2022 multi-user server (`ss-server`)
+
+`ss-server` is a Shadowsocks 2022 / SIP023 server that serves many users on one TCP+UDP port.
+Each user has an individual key (uPSK); the server has one node key (iPSK). Clients (for example Mihomo) use the
+password `SERVER_PSK:USER_PSK` with cipher `2022-blake3-aes-128-gcm` or `2022-blake3-aes-256-gcm`.
+mu keeps its users in sync through the management gRPC API (`SSManagerService`) and reports their traffic.
+
+```bash
+make build-ss-server   # bin/ss-server; Dockerfile.ss-server builds an image
+```
+
+| Environment Variable | Description | Default |
+|----------|------|------|
+| `SS_LISTEN_ADDR` | Proxy listen address (TCP and UDP) | `:8388` |
+| `SS_METHOD` | `2022-blake3-aes-128-gcm` or `2022-blake3-aes-256-gcm` | `2022-blake3-aes-128-gcm` |
+| `SS_SERVER_PSK` / `SS_SERVER_PSK_FILE` | Base64 iPSK (16 bytes for AES-128, 32 for AES-256), inline or from a file | required |
+| `SS_API_ADDR` | Management gRPC listen address; keep it on a private interface | `127.0.0.1:9091` |
+| `SS_API_TOKEN` | Token mu must send; equals mu's `MU_SS_API_TOKEN` | required |
+| `SS_UDP_ENABLED` / `SS_UDP_TIMEOUT` | UDP relay and idle timeout | `true` / `5m` |
+| `SS_ALLOW_PRIVATE_NETWORK` | Allow relaying to loopback, private, link-local and CGNAT addresses | `false` |
+| `SS_METRICS_ENABLED` / `SS_METRICS_PORT` | Prometheus metrics | `true` / `9092` |
+
+Generate keys with `openssl rand -base64 16` (or `32` for AES-256).
+
+How users reach the server: the MU API returns `User.ss_user.psk` (base64 uPSK, same length as the server key).
+Accounts without `ss_user` are ignored by the Shadowsocks backend, and accounts without `v2ray_user` are ignored by
+Trojan and V2Fly. mu names each Shadowsocks user after `User.id`, so keys never act as identifiers.
+
+Behavior to know about:
+
+- Disabling or removing a user, or rotating its key, terminates that user's active TCP and UDP sessions.
+- Traffic is the decrypted payload: upload is client to destination, download the reverse. Counters live in
+  memory and restart at zero with the process; mu treats a counter drop as a new epoch, so traffic accrued since
+  its last collection before a restart is not reported.
+- After an `ss-server` restart it has no users until mu's next sync (up to 60 seconds); users are then re-installed.
+- Unknown keys, replayed handshakes and forbidden destinations are dropped without reply or billing.
+- Two users cannot share a key; the server rejects the second one.
+- Metrics are aggregate (`ss_server_*`) to keep cardinality independent of the user count.
 
 ## Docker Compose
 

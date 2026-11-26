@@ -34,6 +34,13 @@ message VUser {
     uint32 level = 4;
 }
 
+// SSUser carries a Shadowsocks 2022 (SIP023) per-user key.
+message SSUser {
+    // Base64-encoded uPSK. 16 bytes for 2022-blake3-aes-128-gcm, 32 bytes for 2022-blake3-aes-256-gcm.
+    // The length must match the method configured on the ss-server that receives it.
+    string psk = 1;
+}
+
 message User {
     int64 id = 1;
     int32 port = 2;
@@ -44,6 +51,7 @@ message User {
     int64 u = 7;
     int64 d = 8;
     VUser v2ray_user = 9;
+    SSUser ss_user = 10;
 }
 
 message UserTrafficLog {
@@ -59,6 +67,7 @@ enum TrafficType {
     TRAFFIC_TYPE_UNSPECIFIED = 0;
     TRAFFIC_TYPE_V2FLY = 1;
     TRAFFIC_TYPE_TROJAN = 2;
+    TRAFFIC_TYPE_SHADOWSOCKS = 3;
 }
 
 message PingRequest {

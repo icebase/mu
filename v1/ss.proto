@@ -1,0 +1,44 @@
+syntax = "proto3";
+package v1;
+
+option go_package = "github.com/icebase/mu/proto/v1";
+
+// SSManagerService is the management API exposed by ss-server and consumed by mu.
+// Every call must carry the shared token in the "x-ss-token" metadata key.
+service SSManagerService {
+    // ListUsers returns every user with cumulative traffic counters. Keys are never returned.
+    rpc ListUsers(SSListUsersRequest) returns (SSListUsersResponse) {}
+    // SetUser creates the user or replaces its key. Traffic counters survive a key replacement.
+    rpc SetUser(SSSetUserRequest) returns (SSSetUserResponse) {}
+    // RemoveUser deletes the user and terminates its active TCP and UDP sessions.
+    rpc RemoveUser(SSRemoveUserRequest) returns (SSRemoveUserResponse) {}
+}
+
+message SSListUsersRequest {}
+
+message SSServerUser {
+    string name = 1;
+    // Hex of the first 16 bytes of SHA-256 over the raw key; lets mu detect key rotation without seeing the key.
+    string psk_fingerprint = 2;
+    // Cumulative payload bytes since the ss-server process started.
+    int64 upload = 3;
+    int64 download = 4;
+}
+
+message SSListUsersResponse {
+    repeated SSServerUser users = 1;
+}
+
+message SSSetUserRequest {
+    string name = 1;
+    // Base64-encoded uPSK.
+    string psk = 2;
+}
+
+message SSSetUserResponse {}
+
+message SSRemoveUserRequest {
+    string name = 1;
+}
+
+message SSRemoveUserResponse {}

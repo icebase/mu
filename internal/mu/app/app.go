@@ -81,6 +81,16 @@ func (a *App) Init() (err error) {
 		}
 		a.userSync = append(a.userSync, syncer)
 	}
+	if len(a.config.SSAddrs) > 0 && a.config.SSAPIToken == "" {
+		return errors.New("MU_SS_API_TOKEN is required when MU_SS_ADDRS is set")
+	}
+	for _, addr := range a.config.SSAddrs {
+		syncer, err := newSSSync(addr, a.config.SSAPIToken, a.state)
+		if err != nil {
+			return err
+		}
+		a.userSync = append(a.userSync, syncer)
+	}
 	return nil
 }
 func (a *App) initTracing() error {
@@ -292,8 +302,11 @@ func (a *App) flushTraffic(ctx context.Context) error {
 		metrics.TrafficLogsUploaded.Add(float64(len(batch.Logs)))
 		for _, log := range batch.Logs {
 			kind := protocolTrojan
-			if log.TrafficType == int32(pb.TrafficType_TRAFFIC_TYPE_V2FLY) {
+			switch log.TrafficType {
+			case int32(pb.TrafficType_TRAFFIC_TYPE_V2FLY):
 				kind = protocolV2Fly
+			case int32(pb.TrafficType_TRAFFIC_TYPE_SHADOWSOCKS):
+				kind = protocolSS
 			}
 			metrics.TotalUploadBytes.WithLabelValues(kind).Add(float64(log.U))
 			metrics.TotalDownloadBytes.WithLabelValues(kind).Add(float64(log.D))
