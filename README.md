@@ -216,8 +216,23 @@ password `SERVER_PSK:USER_PSK` with cipher `2022-blake3-aes-128-gcm` or `2022-bl
 mu keeps its users in sync through the management gRPC API (`SSManagerService`) and reports their traffic.
 
 ```bash
-make build-ss-server   # bin/ss-server; Dockerfile.ss-server builds an image
+make build-ss-server   # bin/ss-server
 ```
+
+### Docker image and Compose
+
+`ss-server` ships as its own image, `ghcr.io/icebase/mu-ss-server` (built from `Dockerfile.ss-server` by the
+Docker workflow next to `ghcr.io/icebase/mu`). [`docker-compose.ss-server.yml`](docker-compose.ss-server.yml) runs both
+together: mu reaches the management API at `ss-server:9091` over the compose network, so only the proxy port is published.
+
+```bash
+export SS_SERVER_PSK="$(openssl rand -base64 16)"   # 32 bytes for 2022-blake3-aes-256-gcm
+export SS_API_TOKEN="$(openssl rand -hex 24)"       # used by both services
+docker compose -f docker-compose.ss-server.yml up -d
+```
+
+Publish `8388` for both TCP and UDP. Do not publish `9091` (management) or `9092` (metrics) to untrusted networks.
+To build locally: `docker build -f Dockerfile.ss-server -t mu-ss-server .`
 
 | Environment Variable | Description | Default |
 |----------|------|------|
