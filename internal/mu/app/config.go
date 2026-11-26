@@ -10,17 +10,23 @@ import (
 type Config struct {
 	MuAPIBaseURL string
 	MuAPIToken   string
+	MuAPIDebug   bool
 	MuNodeID     string
 	StateFile    string
 
 	TrojanAddrs []string
 	V2flyAddrs  []string
-	SSAddrs     []string
-	SSAPIToken  string
+	VlessAddrs  []string
+	// VlessInboundTag is the V2Ray inbound tag of the VLESS inbound (default "vless").
+	VlessInboundTag string
+	SSAddrs         []string
+	SSAPIToken      string
 
 	// Metrics 配置
-	MetricsEnabled bool
-	MetricsPort    string
+	NodeMetricsReportingEnabled bool
+	V2FlyMetricsEnabled         bool
+	MetricsEnabled              bool
+	MetricsPort                 string
 
 	// Tracing 配置
 	Tracing tracing.Config
@@ -28,34 +34,47 @@ type Config struct {
 
 // ConfigFromEnv initializes and returns a Config object with values from environment variables.
 // Environment variable names:
-// - MU_API_BASE_URL: API base URL
-// - MU_API_TOKEN: API token
-// - MU_NODE_ID: Node identifier
-// - MU_TROJAN_ADDRS: Comma-separated list of Trojan addresses
-// - MU_V2FLY_ADDRS: Comma-separated list of V2Fly addresses
-// - MU_SS_ADDRS: Comma-separated list of ss-server management gRPC addresses
-// - MU_SS_API_TOKEN: Shared token for the ss-server management API
+//   - MU_API_BASE_URL: API base URL
+//   - MU_API_TOKEN: API token
+//   - MU_NODE_ID: Node identifier
+//   - MU_TROJAN_ADDRS: Comma-separated list of Trojan addresses
+//   - MU_V2FLY_ADDRS: Comma-separated list of V2Fly addresses
+//   - MU_VLESS_ADDRS: Comma-separated list of V2Fly addresses hosting a VLESS inbound
+//   - MU_VLESS_INBOUND_TAG: Tag of the VLESS inbound (default "vless")
+//   - MU_NODE_METRICS_REPORTING_ENABLED: Push node metrics to MU Server (disabled by default)
+//   - MU_V2FLY_METRICS_ENABLED: Enable V2Fly backend statistics (disabled by default)
+//   - MU_METRICS_ENABLED / MU_METRICS_PORT: Prometheus endpoint (default true / 9090)
+//   - MU_TRACING_ENABLED, MU_TRACING_EXPORTER, MU_TRACING_ENDPOINT, MU_TRACING_INSECURE,
+//     MU_TRACING_SERVICE_NAME, MU_TRACING_SAMPLE_RATE: OpenTelemetry tracing (disabled by default)
+//   - MU_SS_ADDRS: Comma-separated list of ss-server management gRPC addresses
+//   - MU_SS_API_TOKEN: Shared token for the ss-server management API
 func ConfigFromEnv() *Config {
 	v := viper.New()
 
 	// Set default values
 	v.SetDefault("API_BASE_URL", "")
 	v.SetDefault("API_TOKEN", "")
+	v.SetDefault("API_DEBUG", false)
 	v.SetDefault("NODE_ID", "")
 	v.SetDefault("TROJAN_ADDRS", "")
 	v.SetDefault("V2FLY_ADDRS", "")
+	v.SetDefault("VLESS_ADDRS", "")
+	v.SetDefault("VLESS_INBOUND_TAG", "vless")
 	v.SetDefault("SS_ADDRS", "")
 	v.SetDefault("SS_API_TOKEN", "")
 	v.SetDefault("STATE_FILE", "data/mu-state.json")
 
 	// Metrics defaults
+	v.SetDefault("NODE_METRICS_REPORTING_ENABLED", false)
+	v.SetDefault("V2FLY_METRICS_ENABLED", false)
 	v.SetDefault("METRICS_ENABLED", true)
 	v.SetDefault("METRICS_PORT", "9090")
 
 	// Tracing defaults
 	v.SetDefault("TRACING_ENABLED", false)
 	v.SetDefault("TRACING_SERVICE_NAME", "mu-service")
-	v.SetDefault("TRACING_ENDPOINT", "localhost:4317")
+	v.SetDefault("TRACING_EXPORTER", tracing.ExporterOTLP)
+	v.SetDefault("TRACING_ENDPOINT", "")
 	v.SetDefault("TRACING_INSECURE", true)
 	v.SetDefault("TRACING_SAMPLE_RATE", 1.0)
 
@@ -70,16 +89,21 @@ func ConfigFromEnv() *Config {
 
 	// Create a config struct with values from environment variables
 	config := &Config{
-		MuAPIBaseURL:   v.GetString("API_BASE_URL"),
-		MuAPIToken:     v.GetString("API_TOKEN"),
-		MuNodeID:       v.GetString("NODE_ID"),
-		StateFile:      v.GetString("STATE_FILE"),
-		SSAPIToken:     v.GetString("SS_API_TOKEN"),
-		MetricsEnabled: v.GetBool("METRICS_ENABLED"),
-		MetricsPort:    v.GetString("METRICS_PORT"),
+		MuAPIBaseURL:                v.GetString("API_BASE_URL"),
+		MuAPIToken:                  v.GetString("API_TOKEN"),
+		MuAPIDebug:                  v.GetBool("API_DEBUG"),
+		MuNodeID:                    v.GetString("NODE_ID"),
+		StateFile:                   v.GetString("STATE_FILE"),
+		VlessInboundTag:             v.GetString("VLESS_INBOUND_TAG"),
+		SSAPIToken:                  v.GetString("SS_API_TOKEN"),
+		MetricsEnabled:              v.GetBool("METRICS_ENABLED"),
+		MetricsPort:                 v.GetString("METRICS_PORT"),
+		NodeMetricsReportingEnabled: v.GetBool("NODE_METRICS_REPORTING_ENABLED"),
+		V2FlyMetricsEnabled:         v.GetBool("V2FLY_METRICS_ENABLED"),
 		Tracing: tracing.Config{
 			Enabled:     v.GetBool("TRACING_ENABLED"),
 			ServiceName: v.GetString("TRACING_SERVICE_NAME"),
+			Exporter:    v.GetString("TRACING_EXPORTER"),
 			Endpoint:    v.GetString("TRACING_ENDPOINT"),
 			Insecure:    v.GetBool("TRACING_INSECURE"),
 			SampleRate:  v.GetFloat64("TRACING_SAMPLE_RATE"),
@@ -93,6 +117,10 @@ func ConfigFromEnv() *Config {
 
 	if v2flyAddrsStr := v.GetString("V2FLY_ADDRS"); v2flyAddrsStr != "" {
 		config.V2flyAddrs = parseAddresses(v2flyAddrsStr)
+	}
+
+	if vlessAddrsStr := v.GetString("VLESS_ADDRS"); vlessAddrsStr != "" {
+		config.VlessAddrs = parseAddresses(vlessAddrsStr)
 	}
 
 	if ssAddrsStr := v.GetString("SS_ADDRS"); ssAddrsStr != "" {

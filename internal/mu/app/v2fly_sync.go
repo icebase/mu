@@ -8,16 +8,25 @@ import (
 	"maps"
 	"strings"
 
+	"github.com/icebase/mu/internal/mu/app/metrics"
+	"github.com/icebase/mu/internal/mu/app/tracing"
 	"github.com/icebase/mu/pkg/v2fly"
 	pb "github.com/icebase/mu/proto/v1"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 const tag = "proxy"
+
+// vlessEmailSuffix is appended to the MU email to form the V2Ray backend email of VLESS users.
+// V2Ray statistics are keyed by email only, so this keeps VLESS and VMess counters of one
+// V2Ray instance disjoint and prevents the same traffic from being billed by both syncers.
+const vlessEmailSuffix = "#vless"
 
 type v2flySync struct {
 	manager *v2fly.Manager
 	state   *syncState
 	key     string
+	name    string
 }
 
 func newV2flySync(addr string, state *syncState) (*v2flySync, error) {
@@ -28,9 +37,48 @@ func newV2flySync(addr string, state *syncState) (*v2flySync, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &v2flySync{manager: manager, state: state, key: "v2fly:" + addr + ":" + tag}, nil
+	return &v2flySync{manager: manager, state: state, key: "v2fly:" + addr + ":" + tag, name: protocolV2Fly}, nil
 }
-func (v *v2flySync) Name() string { return protocolV2Fly }
+
+// newVlessSync manages a VLESS inbound of a v2fly instance. Backend emails carry vlessEmailSuffix.
+func newVlessSync(addr, inboundTag string, state *syncState) (*v2flySync, error) {
+	if state == nil {
+		return nil, errors.New("synchronization state is required")
+	}
+	if strings.TrimSpace(inboundTag) == "" {
+		return nil, errors.New("VLESS inbound tag is required")
+	}
+	manager, err := v2fly.NewManager(addr, inboundTag, v2fly.WithProtocol(v2fly.ProtocolVLESS))
+	if err != nil {
+		return nil, err
+	}
+	return &v2flySync{manager: manager, state: state, key: "vless:" + addr + ":" + inboundTag, name: protocolVLESS}, nil
+}
+func (v *v2flySync) Name() string {
+	if v.name == "" {
+		return protocolV2Fly
+	}
+	return v.name
+}
+
+// userList returns the traffic identities that belong to this syncer's protocol. Counters of the
+// other protocol sharing the same V2Ray instance are ignored.
+func (v *v2flySync) userList(ctx context.Context) ([]v2fly.UserData, error) {
+	list, err := v.manager.GetUserList(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	own := list[:0:0]
+	for _, entry := range list {
+		if hasVlessSuffix(entry.User.GetEmail()) == (v.Name() == protocolVLESS) {
+			own = append(own, entry)
+		}
+	}
+	return own, nil
+}
+func hasVlessSuffix(email string) bool {
+	return strings.HasSuffix(strings.ToLower(email), vlessEmailSuffix)
+}
 func (v *v2flySync) Close() error { return v.manager.Close() }
 func (v *v2flySync) capture(users map[string]managedUser, snapshot []v2fly.UserData) ([]*pb.UserTrafficLog, error) {
 	samples := make(map[string]trafficSample, len(snapshot))
@@ -47,7 +95,7 @@ func (v *v2flySync) Sync(ctx context.Context, users []*pb.User) error {
 		return err
 	}
 	var errs []error
-	snapshot, statsErr := v.manager.GetUserList(ctx, false)
+	snapshot, statsErr := v.userList(ctx)
 	if statsErr != nil {
 		// Authorization must not depend on the stats service. Non-reset counters can be collected later.
 		errs = append(errs, statsErr)
@@ -103,7 +151,9 @@ func (v *v2flySync) Sync(ctx context.Context, users []*pb.User) error {
 		if _, keep := enabled[id]; keep {
 			continue
 		}
-		if err := v.manager.RemoveUser(ctx, user.v2User()); err != nil {
+		err := v.manager.RemoveUser(ctx, user.v2User())
+		metrics.ObserveBackendUserOperation(v.Name(), operationRemove, err)
+		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
@@ -114,19 +164,28 @@ func (v *v2flySync) Sync(ctx context.Context, users []*pb.User) error {
 		old, exists := previous.Applied[id]
 		// Add is not an update. Replace unknown/changed configurations once; persist the applied identity.
 		if !exists || !sameV2Account(old, user) {
-			if err := v.manager.RemoveUser(ctx, user.v2User()); err != nil {
+			err := v.manager.RemoveUser(ctx, user.v2User())
+			metrics.ObserveBackendUserOperation(v.Name(), operationRemove, err)
+			if err != nil {
 				errs = append(errs, err)
 				continue
 			}
 			removed = append(removed, id)
 		}
 		// Idempotent Add also restores users after a backend restart, regardless of traffic-counter existence.
-		if _, err := v.manager.AddUser(ctx, user.v2User()); err != nil {
+		_, err := v.manager.AddUser(ctx, user.v2User())
+		metrics.ObserveBackendUserOperation(v.Name(), operationAdd, err)
+		if err != nil {
 			errs = append(errs, fmt.Errorf("add V2Ray user ID %d: %w", user.ID, err))
 			continue
 		}
 		applied[id] = user
 	}
+	tracing.SetAttributes(ctx,
+		attribute.Int("sync.users_desired", len(all)), attribute.Int("sync.users_enabled", len(enabled)),
+		attribute.Int("sync.users_observed", len(snapshot)), attribute.Int("sync.users_removed", len(removed)),
+		attribute.Int("sync.users_applied", len(applied)), attribute.Bool("sync.stats_available", statsErr == nil),
+	)
 	if err := v.state.complete(v.key, applied, removed); err != nil {
 		errs = append(errs, err)
 	}
@@ -140,7 +199,7 @@ func (v *v2flySync) GetTraffic(ctx context.Context, users []*pb.User) ([]*pb.Use
 	if err != nil {
 		return nil, err
 	}
-	snapshot, err := v.manager.GetUserList(ctx, false)
+	snapshot, err := v.userList(ctx)
 	if err != nil {
 		return nil, err
 	}

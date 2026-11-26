@@ -1,0 +1,44 @@
+syntax = "proto3";
+package v1;
+
+option go_package = "github.com/icebase/mu/proto/v1";
+
+message ReportNodeMetricsRequest {
+    string node_id = 1;
+    string batch_id = 2;
+    repeated V2FlyBackendSnapshot backends = 3;
+}
+
+message ReportNodeMetricsResponse {}
+
+message V2FlyBackendSnapshot {
+    // The configured gRPC address, scoped to this node.
+    string backend = 1;
+    int64 sampled_at_unix_millis = 2;
+    // False means collection failed. Runtime and traffic are then absent.
+    bool up = 3;
+    V2FlyRuntimeStats runtime = 4;
+    repeated V2FlyTrafficCounter traffic = 5;
+}
+
+message V2FlyRuntimeStats {
+    uint32 uptime_seconds = 1;
+    uint32 goroutines = 2;
+    uint64 heap_alloc_bytes = 3;
+    uint64 total_alloc_bytes = 4;
+    uint64 runtime_sys_bytes = 5;
+    uint64 mallocs = 6;
+    uint64 frees = 7;
+    uint32 gc_cycles = 8;
+    uint64 gc_pause_total_nanoseconds = 9;
+}
+
+message V2FlyTrafficCounter {
+    // inbound or outbound
+    string dimension = 1;
+    string tag = 2;
+    // uplink or downlink
+    string direction = 3;
+    // Cumulative bytes from this backend process. May reset on restart.
+    uint64 bytes = 4;
+}
